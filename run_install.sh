@@ -48,6 +48,7 @@ mv $AWT_PATH/code/data/wikitext-2/wikitext-2/wiki.train.tokens $AWT_PATH/code/da
 mv $AWT_PATH/code/data/wikitext-2/wikitext-2/wiki.valid.tokens $AWT_PATH/code/data/wikitext-2/valid.txt
 mv $AWT_PATH/code/data/wikitext-2/wikitext-2/wiki.test.tokens $AWT_PATH/code/data/wikitext-2/test.txt
 
+# TO DO: switch over to HF method
 # export HF_HUB_ENABLE_HF_TRANSFER=1
 # hf download \
 #     --local-dir $AWT_PATH/code/data/ \
