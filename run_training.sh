@@ -1,15 +1,7 @@
 #!/bin/bash
 
-# Get root of project and module paths
-current_path="$(pwd)"
-repo_name="synthetic-text-watermarking"
-REPO_ROOT_PATH="${current_path%$repo_name*}$repo_name"
-
-AWT_PATH=$REPO_ROOT_PATH/synthetic_text_watermarking/adversarial_watermarking_transformer
-
 # Run training
-cd $AWT_PATH/code/
-# touch WT2_mt_noft_gen.pt
+cd code/
 
 python main_train.py \
     --cuda \

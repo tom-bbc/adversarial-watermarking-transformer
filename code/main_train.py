@@ -1,7 +1,7 @@
+# Imports
 import argparse
-import math
+import hashlib
 import os
-import sys
 import time
 
 import data
@@ -10,10 +10,11 @@ import model_mt_autoenc_cce
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from fb_semantic_encoder import BLSTMEncoder
+from tqdm import tqdm
 from utils import batchify, generate_msgs, get_batch_different, repackage_hidden
 
+# Entrypoint
 parser = argparse.ArgumentParser(
     description="PyTorch PennTreeBank RNN/LSTM Language Model"
 )
@@ -83,7 +84,7 @@ parser.add_argument(
     help="When (which epochs) to divide the learning rate by 10 - accepts multiple",
 )
 
-# message arguments
+# Message arguments
 parser.add_argument(
     "--msg_len", type=int, default=64, help="The length of the binary message"
 )
@@ -97,7 +98,7 @@ parser.add_argument(
     "--msg_in_mlp_nodes", type=list, default=[], help="nodes in the MLP of the message"
 )
 
-# transformer arguments
+# Transformer arguments
 parser.add_argument(
     "--attn_heads",
     type=int,
@@ -114,7 +115,7 @@ parser.add_argument(
     help="If the message encoder and language encoder will share weights",
 )
 
-# adv. transformer arguments
+# Adv. transformer arguments
 parser.add_argument(
     "--adv_attn_heads",
     type=int,
@@ -128,7 +129,7 @@ parser.add_argument(
     help="The number of encoding layers in the adversary transformer",
 )
 
-# gumbel softmax arguments
+# Gumbel softmax arguments
 parser.add_argument(
     "--gumbel_temp", type=int, default=0.5, help="Gumbel softmax temprature"
 )
@@ -146,6 +147,7 @@ parser.add_argument(
 parser.add_argument("--beta1", type=float, default=0.9, help="Adam beta1 parameter")
 parser.add_argument("--beta2", type=float, default=0.98, help="Adam beta2 parameter")
 parser.add_argument("--eps", type=float, default=1e-9, help="Adam eps parameter")
+
 # GAN arguments
 parser.add_argument(
     "--msg_weight",
@@ -154,7 +156,7 @@ parser.add_argument(
     help="The factor multiplied with the message loss",
 )
 
-# fb InferSent semantic loss
+# FB InferSent semantic loss
 parser.add_argument(
     "--use_semantic_loss", type=int, default=1, help="whether to use semantic loss"
 )
@@ -177,7 +179,7 @@ parser.add_argument(
     help="The factor multiplied with the semantic loss",
 )
 
-# language loss
+# Language loss
 parser.add_argument(
     "--use_lm_loss", type=int, default=1, help="whether to use language model loss"
 )
@@ -191,7 +193,7 @@ parser.add_argument(
     help="path to the fine tuned language model",
 )
 
-# reconstruction loss
+# Reconstruction loss
 parser.add_argument(
     "--use_reconst_loss",
     type=int,
@@ -205,7 +207,7 @@ parser.add_argument(
     help="The factor multiplied with the reconstruct loss",
 )
 
-# lang model params.
+# Language model params.
 parser.add_argument(
     "--model", type=str, default="LSTM", help="type of recurrent net (LSTM, QRNN, GRU)"
 )
@@ -246,6 +248,7 @@ parser.add_argument(
     default=0,
     help="amount of weight dropout to apply to the RNN hidden to hidden matrix",
 )
+
 # GAN arguments
 parser.add_argument(
     "--discr_interval", type=int, default=1, help="when to update the discriminator"
@@ -288,24 +291,24 @@ if torch.cuda.is_available():
 def model_save(fn):
     with open(fn + "_gen.pt", "wb") as f:
         torch.save([model_gen, criterion, criterion_reconst, optimizer_gen], f)
+
     with open(fn + "_disc.pt", "wb") as f:
         torch.save([model_disc, criterion, criterion_reconst, optimizer_disc], f)
 
 
 def model_load(fn):
     global model_gen, model_disc, criterion, criterion_reconst, optimizer_gen, optimizer_disc
+
     with open(fn + "_gen.pt", "rb") as f:
         model_gen, criterion, criterion_reconst, optimizer_gen = torch.load(
             f, map_location="cpu"
         )
+
     with open(fn + "_disc.pt", "rb") as f:
         model_disc, criterion, criterion_reconst, optimizer_disc = torch.load(
             f, map_location="cpu"
         )
 
-
-import hashlib
-import os
 
 fn = "corpus.{}.data".format(hashlib.md5(args.data.encode()).hexdigest())
 if os.path.exists(fn):
@@ -315,6 +318,7 @@ else:
     print("Producing dataset...")
     corpus = data.Corpus(args.data)
     torch.save(corpus, fn)
+
 
 eval_batch_size = 10
 test_batch_size = 1
@@ -342,7 +346,7 @@ if args.autoenc_path != "":
 else:
     autoenc_model = None
 
-## global variable for the number of steps ( batches) ##
+# Global variable for the number of steps (batches)
 step_num = 1
 discr_step_num = 1
 
@@ -369,15 +373,18 @@ if args.resume:
     all_msgs = np.loadtxt("msgs.txt")
     print("Resuming model ...")
     model_load(args.resume)
+
     optimizer_gen.param_groups[0]["lr"] = (
         learing_rate_scheduler() if args.scheduler else args.lr
     )
     optimizer_disc.param_groups[0]["lr"] = (
         learing_rate_disc_scheduler() if args.scheduler else args.lr
     )
+
 else:
-    ### generate random msgs ###
+    # Generate random msgs
     all_msgs = generate_msgs(args)
+
     model_gen = model_mt_autoenc_cce.TranslatorGeneratorModel(
         ntokens,
         args.emsize,
@@ -405,18 +412,27 @@ else:
             nn.init.xavier_uniform_(p)
 
 
-###
 if not criterion:
     criterion = nn.BCEWithLogitsLoss()
+else:
+    criterion = None
+
 if args.use_semantic_loss and not criterion_sem:
     criterion_sem = nn.L1Loss()
+else:
+    criterion_sem = None
+
 if args.use_lm_loss and not criterion_lm:
     criterion_lm = nn.CrossEntropyLoss()
+else:
+    criterion_lm = None
+
 if args.use_reconst_loss and not criterion_reconst:
     criterion_reconst = nn.CrossEntropyLoss()
-###
+else:
+    criterion_reconst = None
 
-### semantic model ###
+# Semantic model
 if args.use_semantic_loss:
     modelSentEncoder = BLSTMEncoder(word2idx, idx2word, args.glove_path)
     encoderState = torch.load(args.infersent_path, map_location="cpu")
@@ -426,7 +442,7 @@ if args.use_semantic_loss:
             state[k] = encoderState[k]
     modelSentEncoder.load_state_dict(state)
 
-## language model ##
+# Language model
 if args.use_lm_loss:
     with open(args.lm_ckpt, "rb") as f:
         pretrained_lm, _, _ = torch.load(f, map_location="cpu")
@@ -444,6 +460,7 @@ if args.use_lm_loss:
             args.tied_lm,
             pretrained_lm,
         )
+
     del pretrained_lm
 
 
@@ -459,7 +476,7 @@ if args.cuda:
         criterion_lm = criterion_lm.cuda()
         langModel = langModel.cuda()
 
-###
+# List model parameters
 params = (
     list(model_gen.parameters())
     + list(criterion.parameters())
@@ -489,7 +506,7 @@ def convert_idx_to_words(idx):
     return batch_list
 
 
-### conventions for real and fake labels during training ###
+# Conventions for real and fake labels during training
 real_label = 1
 fake_label = 0
 
@@ -514,7 +531,6 @@ def evaluate(data_source, batch_size=10):
     total_loss_reconst = 0
     total_loss_lm = 0
 
-    ntokens = len(corpus.dictionary)
     batches_count = 0
     for i in range(0, data_source.size(0) - args.bptt, args.bptt):
         if args.use_lm_loss:
@@ -522,31 +538,37 @@ def evaluate(data_source, batch_size=10):
         data, msgs, targets = get_batch_different(
             data_source, i, args, all_msgs, evaluation=True
         )
-        # get a batch of fake (edited) sequence from the generator
+
+        # Get a batch of fake (edited) sequence from the generator
         fake_data_emb, fake_one_hot, fake_data_prob = model_gen.forward_sent(
             data, msgs, args.gumbel_temp
         )
         msg_out = model_gen.forward_msg_decode(fake_data_emb)
-        # get prediction (and the loss) of the discriminator on the real sequence. First gen the embeddings from the generator
+
+        # Get prediction (and the loss) of the discriminator on the real sequence.
+        # First gen the embeddings from the generator
         data_emb = model_gen.forward_sent(
             data, msgs, args.gumbel_temp, only_embedding=True
         )
         real_out = model_disc(data_emb)
         label = torch.full((data.size(1), 1), real_label)
+
         if args.cuda:
             label = label.cuda()
-        errD_real = criterion(real_out, label)
-        # get prediction (and the loss) of the discriminator on the fake sequence.
+
+        errD_real = criterion(real_out, label.float())
+
+        # Get prediction (and the loss) of the discriminator on the fake sequence.
         fake_out = model_disc(fake_data_emb.detach())
         label.fill_(fake_label)
-        errD_fake = criterion(fake_out, label)
+        errD_fake = criterion(fake_out, label.float())
         errD = errD_real + errD_fake
 
-        # generator loss
+        # Generator loss
         label.fill_(real_label)
-        errG_disc = criterion(fake_out, label)
+        errG_disc = criterion(fake_out, label.float())
 
-        # semantic loss
+        # Semantic loss
         if args.use_semantic_loss:
             orig_sem_emb = modelSentEncoder.forward_encode_nopad(data)
             fake_sem_emb = modelSentEncoder.forward_encode_nopad(
@@ -555,10 +577,10 @@ def evaluate(data_source, batch_size=10):
             sem_loss = criterion_sem(orig_sem_emb, fake_sem_emb)
             total_loss_sem += sem_loss.data
 
-        # msg loss of the generator
+        # Msg loss of the generator
         msg_loss = criterion(msg_out, msgs)
 
-        # lm loss of the generator
+        # LM loss of the generator
         if args.use_lm_loss:
             lm_targets = fake_one_hot[1 : fake_one_hot.size(0)]
             lm_targets = torch.argmax(lm_targets, dim=-1)
@@ -571,7 +593,7 @@ def evaluate(data_source, batch_size=10):
             total_loss_lm += lm_loss.data
             hidden = repackage_hidden(hidden)
 
-        # reconstruction loss
+        # Reconstruction loss
         reconst_loss = criterion_reconst(fake_data_prob, data.view(-1))
         total_loss_reconst += reconst_loss.data
 
@@ -579,8 +601,10 @@ def evaluate(data_source, batch_size=10):
         total_loss_disc += errD.data
         total_loss_msg += msg_loss.data
         batches_count = batches_count + 1
+
     if args.use_semantic_loss:
         total_loss_sem = total_loss_sem.item()
+
     if args.use_lm_loss:
         total_loss_lm = total_loss_lm.item()
 
@@ -606,8 +630,9 @@ def train():
         hidden = langModel.init_hidden(args.batch_size)
 
     start_time = time.time()
-    ntokens = len(corpus.dictionary)
     batch, i = 0, 0
+
+    print("Starting training epoch...")
     while i < train_data.size(0) - 1 - 1:
         print(f"Training sample: {i} / {train_data.size(0) - 1 - 1}", end="\r")
 
@@ -625,9 +650,11 @@ def train():
 
         model_gen.train()
         model_disc.train()
+
         if args.use_semantic_loss:
             modelSentEncoder.train()
-            # set parameters trainable to false.
+
+            # Set parameters trainable to false.
             for p in modelSentEncoder.parameters():  # reset requires_grad
                 p.requires_grad = (
                     False  # they are set to False below in the generator update
@@ -635,7 +662,8 @@ def train():
 
         if args.use_lm_loss:
             langModel.train()
-            # set parameters trainable to false.
+
+            # Set parameters trainable to false.
             for p in langModel.parameters():  # reset requires_grad
                 p.requires_grad = (
                     False  # they are set to False below in the generator update
@@ -645,15 +673,14 @@ def train():
         optimizer_gen.zero_grad()
         optimizer_disc.zero_grad()
 
-        ####### Update lr #######
+        # Update learning rate
         if args.scheduler:
             optimizer_gen.param_groups[0]["lr"] = learing_rate_scheduler()
             optimizer_disc.param_groups[0]["lr"] = learing_rate_disc_scheduler()
 
-        ####### Update Disc Network #######
-        # Maximize log (D(x) + log (1 - D(G(z))) #
-        # Train with all-real batch #
-
+        # Update Disc Network
+        # Maximize log (D(x) + log (1 - D(G(z)))
+        # Train with all-real batch
         label = torch.full((data.size(1), 1), real_label)
         if args.cuda:
             label = label.cuda()
@@ -667,27 +694,31 @@ def train():
         errD_real = criterion(real_out, label.float())
         errD_real.backward()
 
-        # Train with all-fake batch #
-        # Generate batch of fake sequence #
+        # Train with all-fake batch
+        # Generate batch of fake sequence
         fake_data_emb, fake_one_hot, fake_data_prob = model_gen.forward_sent(
             data, msgs, args.gumbel_temp
         )
         msg_out = model_gen.forward_msg_decode(fake_data_emb)
-        # Classify all batch with the discriminator #
+
+        # Classify all batch with the discriminator
         fake_out = model_disc(fake_data_emb.detach())
         label.fill_(fake_label)
         errD_fake = criterion(fake_out, label.float())
         errD_fake.backward()
-        # add the gradients #
+
+        # Add the gradients
         errD = errD_real + errD_fake
-        # update the discriminator #
+
+        # Update the discriminator
         if batch % args.discr_interval == 0 and batch > 0:
             optimizer_disc.step()
 
-        ####### Update Generator Network #######
+        # Update Generator Network
         # Maximize log(D(G(z)))
         # For the generator loss the labels are real #
         label.fill_(real_label)
+
         # Classify with the updated discriminator #
         fake_out2 = model_disc(fake_data_emb)
         errG_disc = criterion(fake_out2, label.float())
@@ -696,7 +727,7 @@ def train():
         total_loss_reconst += errG_reconst.data
 
         if args.use_semantic_loss:
-            # Compute sentence embedding #
+            # Compute sentence embedding
             orig_sent_emb = modelSentEncoder.forward_encode_nopad(data)
             fake_sent_emb = modelSentEncoder.forward_encode_nopad(
                 fake_one_hot, one_hot=True
@@ -730,7 +761,8 @@ def train():
             total_loss_lm += lm_loss.item()
 
         errG.backward()
-        # update the generator #
+
+        # Update the generator
         optimizer_gen.step()
 
         # save losses #
@@ -776,13 +808,18 @@ def train():
             total_loss_reconst = 0
             total_loss_lm = 0
             start_time = time.time()
-        ###
+
         batch += 1
         i += seq_len
+
         global step_num, discr_step_num
         step_num += 1
         discr_step_num += 1
 
+    print("Training epoch complete.")
+
+
+print("Parsing parameters...")
 
 # Loop over epochs.
 lr = args.lr
@@ -799,6 +836,7 @@ stored_loss_text = 100000000
 try:
     optimizer_gen = None
     optimizer_disc = None
+
     # Ensure the optimizer is optimizing params, which includes both the model's weights as well as the criterion's weight (i.e. Adaptive Softmax)
     if args.optimizer == "sgd":
         optimizer_gen = torch.optim.SGD(
@@ -807,6 +845,7 @@ try:
         optimizer_disc = torch.optim.SGD(
             params_disc, lr=args.lr, weight_decay=args.wdecay
         )
+
     if args.optimizer == "adam":
         optimizer_gen = torch.optim.Adam(
             params_gen,
@@ -821,7 +860,9 @@ try:
             weight_decay=args.wdecay,
         )
 
-    for epoch in range(1, args.epochs + 1):
+    print("Starting training...")
+
+    for epoch in tqdm(range(1, args.epochs + 1), desc="Training epoch"):
         epoch_start_time = time.time()
         train()
         if "t0" in optimizer_gen.param_groups[0]:
@@ -902,6 +943,7 @@ try:
                 val_loss_lm,
                 val_loss_disc,
             ) = evaluate(val_data, eval_batch_size)
+
             val_loss_gen_tot = (
                 val_loss_msg
                 + val_loss_sem
@@ -909,7 +951,9 @@ try:
                 + val_loss_gen
                 + val_loss_lm
             )
+
             val_loss_text = val_loss_sem + val_loss_reconst + val_loss_lm
+
             print("-" * 89)
             print(
                 "| end of epoch {:3d} | time: {:5.2f}s | val gen loss {:5.2f} | "
@@ -925,6 +969,7 @@ try:
                 )
             )
             print("-" * 89)
+
             log_file_loss_val.write(
                 str(val_loss_gen)
                 + ", "
@@ -945,14 +990,17 @@ try:
                 model_save(args.save)
                 print("Saving model (new best generator validation)")
                 stored_loss = val_loss_gen_tot
+
             if val_loss_msg < stored_loss_msg:
                 model_save(args.save + "_msg")
                 print("Saving model (new best msg validation)")
                 stored_loss_msg = val_loss_msg
+
             if val_loss_text < stored_loss_text:
                 model_save(args.save + "_reconst")
                 print("Saving model (new best reconstruct validation)")
                 stored_loss_text = val_loss_text
+
             if epoch % args.save_interval == 0:
                 model_save(args.save + "_interval")
                 print("Saving model (intervals)")
@@ -994,17 +1042,19 @@ except KeyboardInterrupt:
     print("-" * 89)
     print("Exiting from training early")
 
+
 # Load the best saved model.
 model_load(args.save)
+
 if args.cuda:
     model_gen = model_gen.cuda()
     model_disc = model_disc.cuda()
     criterion = criterion.cuda()
     criterion_reconst = criterion_reconst.cuda()
+
     if args.use_semantic_loss:
         criterion_sem = criterion_sem.cuda()
         modelSentEncoder = modelSentEncoder.cuda()
-
 
 # Run on test data.
 (

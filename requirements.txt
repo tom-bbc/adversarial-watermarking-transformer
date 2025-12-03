@@ -5,3 +5,4 @@ nltk
 scipy
 pillow
 sentence-transformers
+tqdm
