@@ -16,4 +16,4 @@ python3 evaluate_avg.py \
     --samples_num 10 \
     --avg_cycle 2
 
-echo " << * >> Completed testing stage."
+echo -e "\n << * >> Completed testing stage."

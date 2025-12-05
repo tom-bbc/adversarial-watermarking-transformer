@@ -26,4 +26,4 @@ python3 main_train.py \
     --use_lm_loss 0 \
     --lm_weight 1.3
 
-echo " << * >> Completed fine-tuning stage."
+echo -e "\n << * >> Completed fine-tuning stage."

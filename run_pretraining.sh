@@ -22,4 +22,4 @@ python3 main_train.py \
     --reconst_weight 1.5 \
     --scheduler 1
 
-echo " << * >> Completed pre-training stage."
+echo -e "\n << * >> Completed pre-training stage."

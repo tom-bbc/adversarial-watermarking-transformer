@@ -465,9 +465,14 @@ if args.cuda:
 f = open("val_out.txt", "w")
 f_metrics = open("val_out_metrics.txt", "w")
 
+print("\n << * >> Running model validation.", end="\n\n")
 val_lm_loss, val_correct_msg, val_correct_bits_msg, val_meteor, val_l2_sbert = evaluate(
     val_data, f, eval_batch_size
 )
+
+if not args.use_lm_loss:
+    val_lm_loss = None
+
 print("-" * 150)
 print(
     "| validation | lm loss {:5.2f} | msg accuracy {:5.2f} | msg bit accuracy {:5.2f} |  meteor {:5.4f} | SentBert dist. {:5.4f}".format(
@@ -485,17 +490,22 @@ f.close()
 f = open("test_out.txt", "w")
 f_metrics = open("test_out_metrics.txt", "w")
 
-val_lm_loss, val_correct_msg, val_correct_bits_msg, val_meteor, val_l2_sbert = evaluate(
-    test_data, f, test_batch_size
+print("\n << * >> Running model testing.", end="\n\n")
+test_lm_loss, test_correct_msg, test_correct_bits_msg, test_meteor, test_l2_sbert = (
+    evaluate(test_data, f, test_batch_size)
 )
+
+if not args.use_lm_loss:
+    test_lm_loss = None
+
 print("-" * 150)
 print(
     "| Test | lm loss {:5.2f} | msg accuracy {:5.2f} | msg bit accuracy {:5.2f} |  meteor {:5.4f} | SentBert dist. {:5.4f}".format(
-        val_lm_loss,
-        val_correct_msg * 100,
-        val_correct_bits_msg * 100,
-        val_meteor,
-        val_l2_sbert,
+        test_lm_loss,
+        test_correct_msg * 100,
+        test_correct_bits_msg * 100,
+        test_meteor,
+        test_l2_sbert,
     )
 )
 print("-" * 150)

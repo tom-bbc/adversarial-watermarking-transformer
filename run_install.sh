@@ -54,4 +54,4 @@ mv code/data/wikitext-2/wikitext-2/wiki.test.tokens code/data/wikitext-2/test.tx
 # mv code/data/wikitext-2-v1/test-00000-of-00001.parquet code/data/wikitext-2/test.txt
 # rm -r code/data/wikitext-2-v1
 
-echo " << * >> Downloaded WikiText-2 dataset."
+echo -e "\n << * >> Downloaded WikiText-2 dataset."
