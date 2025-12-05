@@ -1,6 +1,5 @@
-torch==2.5.0
-# cudatoolkit==10.0
-# torchvision
+torch
+torchvision
 nltk
 scipy
 pillow

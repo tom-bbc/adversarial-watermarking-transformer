@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import os
+import pickle
 import time
 
 import data
@@ -299,21 +300,25 @@ def model_save(fn):
 def model_load(fn):
     global model_gen, model_disc, criterion, criterion_reconst, optimizer_gen, optimizer_disc
 
+    map_location = "cpu" if args.cuda else "cuda"
+
     with open(fn + "_gen.pt", "rb") as f:
         model_gen, criterion, criterion_reconst, optimizer_gen = torch.load(
-            f, map_location="cpu"
+            f, map_location=map_location, weights_only=False
         )
 
     with open(fn + "_disc.pt", "rb") as f:
         model_disc, criterion, criterion_reconst, optimizer_disc = torch.load(
-            f, map_location="cpu"
+            f, map_location=map_location, weights_only=False
         )
 
 
+map_location = "cpu" if args.cuda else "cuda"
 fn = "corpus.{}.data".format(hashlib.md5(args.data.encode()).hexdigest())
+
 if os.path.exists(fn):
     print("Loading cached dataset...")
-    corpus = torch.load(fn)
+    corpus = torch.load(fn, map_location=map_location, weights_only=False)
 else:
     print("Producing dataset...")
     corpus = data.Corpus(args.data)
@@ -342,7 +347,9 @@ idx2word = corpus.dictionary.idx2word
 
 if args.autoenc_path != "":
     with open(args.autoenc_path, "rb") as f:
-        autoenc_model, _, _ = torch.load(f)
+        autoenc_model, _, _ = torch.load(
+            f, map_location=map_location, weights_only=False
+        )
 else:
     autoenc_model = None
 
@@ -411,31 +418,36 @@ else:
         if p.dim() > 1:
             nn.init.xavier_uniform_(p)
 
+criterion = nn.BCEWithLogitsLoss()
+# if not criterion:
+#     criterion = nn.BCEWithLogitsLoss()
+# else:
+#     criterion = None
 
-if not criterion:
-    criterion = nn.BCEWithLogitsLoss()
-else:
-    criterion = None
+criterion_sem = nn.L1Loss()
+# if args.use_semantic_loss and not criterion_sem:
+#     criterion_sem = nn.L1Loss()
+# else:
+#     criterion_sem = None
 
-if args.use_semantic_loss and not criterion_sem:
-    criterion_sem = nn.L1Loss()
-else:
-    criterion_sem = None
+criterion_lm = nn.CrossEntropyLoss()
+# if args.use_lm_loss and not criterion_lm:
+#     criterion_lm = nn.CrossEntropyLoss()
+# else:
+#     criterion_lm = None
 
-if args.use_lm_loss and not criterion_lm:
-    criterion_lm = nn.CrossEntropyLoss()
-else:
-    criterion_lm = None
-
-if args.use_reconst_loss and not criterion_reconst:
-    criterion_reconst = nn.CrossEntropyLoss()
-else:
-    criterion_reconst = None
+criterion_reconst = nn.CrossEntropyLoss()
+# if args.use_reconst_loss and not criterion_reconst:
+#     criterion_reconst = nn.CrossEntropyLoss()
+# else:
+#     criterion_reconst = None
 
 # Semantic model
 if args.use_semantic_loss:
     modelSentEncoder = BLSTMEncoder(word2idx, idx2word, args.glove_path)
-    encoderState = torch.load(args.infersent_path, map_location="cpu")
+    encoderState = torch.load(
+        args.infersent_path, map_location=map_location, weights_only=False
+    )
     state = modelSentEncoder.state_dict()
     for k in encoderState:
         if k in state:
@@ -445,7 +457,9 @@ if args.use_semantic_loss:
 # Language model
 if args.use_lm_loss:
     with open(args.lm_ckpt, "rb") as f:
-        pretrained_lm, _, _ = torch.load(f, map_location="cpu")
+        pretrained_lm, _, _ = torch.load(
+            f, map_location=map_location, weights_only=False
+        )
         langModel = lang_model.RNNModel(
             args.model,
             ntokens,

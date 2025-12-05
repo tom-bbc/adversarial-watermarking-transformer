@@ -1,10 +1,11 @@
 #!/bin/bash
 
-# Run training
+# Setup
+source .env/bin/activate
 cd code/
 
-python main_train.py \
-    --cuda \
+# Run training
+python3 main_train.py \
     --msg_len 4 \
     --data data/wikitext-2 \
     --batch_size 80  \
@@ -20,3 +21,5 @@ python main_train.py \
     --gen_weight 1.5 \
     --reconst_weight 1.5 \
     --scheduler 1
+
+echo " << * >> Completed pre-training stage."

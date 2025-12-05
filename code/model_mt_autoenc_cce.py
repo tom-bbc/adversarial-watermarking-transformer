@@ -8,7 +8,7 @@ from embed_regularize import embedded_dropout
 from locked_dropout import LockedDropout
 from torch.autograd import Variable
 
-USE_CUDA = False
+USE_CUDA = True
 
 
 def sample_gumbel(x):
