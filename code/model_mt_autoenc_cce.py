@@ -4,26 +4,21 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from embed_regularize import embedded_dropout
 from locked_dropout import LockedDropout
 from torch.autograd import Variable
 
-USE_CUDA = True
 
+def sample_gumbel(x, device="cuda"):
+    noise = torch.randn(x.size(), device=device, dtype=torch.float32)
 
-def sample_gumbel(x):
-    if USE_CUDA:
-        noise = torch.cuda.FloatTensor(x.size()).uniform_()
-    else:
-        noise = torch.FloatTensor(x.size()).uniform_()
     eps = 1e-20
     noise.add_(eps).log_().neg_()
     noise.add_(eps).log_().neg_()
     return Variable(noise)
 
 
-def gumbel_softmax_sample(x, tau=0.5):
-    noise = sample_gumbel(x)
+def gumbel_softmax_sample(x, tau=0.5, device="cuda"):
+    noise = sample_gumbel(x, device=device)
     y = (F.log_softmax(x, dim=-1) + noise) / tau
     # ysft = F.softmax(y)
     return y.view_as(x)
@@ -260,7 +255,7 @@ class TranslatorGeneratorModel(nn.Module):
         )
 
         sent_decoded_vocab_soft = gumbel_softmax_sample(
-            sent_decoded_vocab, tau=gumbel_temp
+            sent_decoded_vocab, tau=gumbel_temp, device=device
         )
 
         return (
