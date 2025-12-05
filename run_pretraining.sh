@@ -7,10 +7,10 @@ cd code/
 # Run training
 python3 main_train.py \
     --msg_len 4 \
-    --data data/wikitext-2 \
+    --data wikitext-2/wikitext-2 \
     --batch_size 80  \
     --epochs 200 \
-    --save WT2_mt_noft \
+    --save models/WT2_mt_noft \
     --optimizer adam \
     --fixed_length 1 \
     --bptt 80 \

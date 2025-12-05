@@ -5,3 +5,5 @@ scipy
 pillow
 sentence-transformers
 tqdm
+scikit-learn
+numpy
