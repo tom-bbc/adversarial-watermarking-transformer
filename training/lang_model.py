@@ -1,11 +1,22 @@
+###############################################################################
+# Imports
+###############################################################################
+
+# External imports
 import copy
+import sys
+from pathlib import Path
 
 import torch
 import torch.nn as nn
-from locked_dropout import LockedDropout
-from weight_drop import WeightDrop
+
+# Local imports
+path_root = Path(__file__).parents[1]
+sys.path.append(str(path_root))
 
 from training.embed_regularize import embedded_dropout
+from training.locked_dropout import LockedDropout
+from training.weight_drop import WeightDrop
 
 
 class RNNModel(nn.Module):

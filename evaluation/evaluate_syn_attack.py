@@ -1,21 +1,19 @@
 import argparse
 import time
-import math
+
+import lang_model
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import data_processing.data as data
-import model_mt_autoenc_cce
-import lang_model
-from sentence_transformers import SentenceTransformer
-from scipy.stats import binom_test
-from numpy.random import uniform
-
 from nltk.corpus import wordnet
-from sklearn.metrics import f1_score
-from utils import batchify, repackage_hidden, get_batch_different, generate_msgs
 from nltk.translate.meteor_score import meteor_score
+from numpy.random import uniform
+from scipy.stats import binom_test
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics import f1_score
+
+import data_processing.data as data
+from data_processing.utils import batchify, generate_msgs, get_batch_different
 
 parser = argparse.ArgumentParser(
     description="PyTorch PennTreeBank RNN/LSTM Language Model"

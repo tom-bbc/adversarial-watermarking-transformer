@@ -1,11 +1,14 @@
 .env
 __pycache__/
 
-code/sent_encoder/
-code/data/
-
 *.data
 *.pt
 
 *.txt
 !requirements.txt
+
+datasets/*
+!datasets/.gitkeep
+
+models/*
+!models/.gitkeep

@@ -1,12 +1,13 @@
 import argparse
 import time
 
-import data_processing.data_disc_lm as data_disc_lm
 import numpy as np
 import torch
 import torch.nn as nn
 from sklearn.metrics import f1_score
-from utils import batchify, get_batch_no_msg
+
+import data_processing.data_disc_lm as data_disc_lm
+from data_processing.utils import batchify, get_batch_no_msg
 
 parser = argparse.ArgumentParser(
     description="PyTorch PennTreeBank RNN/LSTM Language Model"

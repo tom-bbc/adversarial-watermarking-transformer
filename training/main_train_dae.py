@@ -1,23 +1,14 @@
 import argparse
-import math
 import time
 
 import model_denoise_autoenc_attack
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from utils import (
-    batchify,
-    generate_msgs,
-    get_batch_different,
-    get_batch_noise,
-    repackage_hidden,
-)
 
 # import data
 import data_processing.data as data
-import training.lang_model as lang_model
+from data_processing.utils import batchify, generate_msgs, get_batch_noise
 
 parser = argparse.ArgumentParser(
     description="PyTorch PennTreeBank RNN/LSTM Language Model"

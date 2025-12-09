@@ -1,16 +1,17 @@
 #!/bin/bash
 
 # Setup
-source .env/bin/activate
-cd code/
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+source "$ROOT/.env/bin/activate"
 
 # Run training
-python3 main_train.py \
+python3 "$ROOT/training/main_train.py" \
     --msg_len 4 \
-    --data wikitext-2/wikitext-2 \
+    --data wikitext-2 \
     --batch_size 80  \
     --epochs 200 \
-    --save models/WT2_mt_noft \
+    --save WT2_mt_noft \
     --optimizer adam \
     --fixed_length 1 \
     --bptt 80 \

@@ -2,20 +2,29 @@
 # Imports
 ###############################################################################
 
+# External imports
 import argparse
 import json
+import os
+import sys
 import time
+from pathlib import Path
 
 import numpy as np
 import torch
 import torch.nn as nn
-from lang_model import RNNModel
 from nltk.translate.meteor_score import meteor_score
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
-from utils import batchify, generate_msgs, get_batch_different
+
+# Local imports
+path_root = Path(__file__).parents[1]
+path_training = os.path.join(path_root, "training")
+sys.path.extend([str(path_root), str(path_training)])
 
 import data_processing.data as data
+from data_processing.utils import batchify, generate_msgs, get_batch_different
+from training.lang_model import RNNModel
 
 ###############################################################################
 # Helper functions for test criteria
@@ -121,7 +130,6 @@ def evaluate(
         langModel.eval()
 
     total_loss_lm = 0
-    # ntokens = len(corpus.dictionary)
     tot_count = 0
     correct_msg_count = 0
     tot_count_bits = 0
@@ -319,7 +327,8 @@ def main(args):
     # Load validation and testing data
     # =========================================================================
 
-    corpus = data.Corpus(args.data)
+    dataset_path = os.path.join(path_root, "datasets", args.data)
+    corpus = data.Corpus(dataset_path)
 
     eval_batch_size = 1
     test_batch_size = 1
@@ -385,13 +394,17 @@ def main(args):
     sbert_model = SentenceTransformer("bert-base-nli-mean-tokens")
 
     # Load the best saved model.
-    with open(args.gen_path, "rb") as f:
+    gen_model_path = os.path.join(path_root, "models", args.gen_model)
+
+    with open(gen_model_path, "rb") as f:
         model_gen, _, _, _ = torch.load(
             f, map_location=map_location, weights_only=False
         )
 
     # Load the best saved model.
-    with open(args.disc_path, "rb") as f:
+    disc_model_path = os.path.join(path_root, "models", args.disc_model)
+
+    with open(disc_model_path, "rb") as f:
         model_disc, _, _, _ = torch.load(
             f, map_location=map_location, weights_only=False
         )
@@ -403,24 +416,26 @@ def main(args):
     # Run validation
     # =========================================================================
 
-    f = open("val_out.txt", "w")
-    # f_metrics = open("val_out_metrics.txt", "w")
-
+    output_path = os.path.join(path_root, "outputs")
+    val_output_path = os.path.join(output_path, "val_out.txt")
+    Path(output_path).mkdir(parents=True, exist_ok=True)
     print("\n << * >> Running model validation.", end="\n\n")
-    val_lm_loss, val_correct_msg, val_correct_bits_msg, val_meteor, val_l2_sbert = (
-        evaluate(
-            val_data,
-            all_msgs,
-            corpus,
-            sbert_model=sbert_model,
-            model_gen=model_gen,
-            model_disc=model_disc,
-            langModel=langModel,
-            criterion_lm=criterion_lm,
-            out_file=f,
-            batch_size=eval_batch_size,
+
+    with open(val_output_path, "w") as out_file:
+        val_lm_loss, val_correct_msg, val_correct_bits_msg, val_meteor, val_l2_sbert = (
+            evaluate(
+                val_data,
+                all_msgs,
+                corpus,
+                sbert_model=sbert_model,
+                model_gen=model_gen,
+                model_disc=model_disc,
+                langModel=langModel,
+                criterion_lm=criterion_lm,
+                out_file=out_file,
+                batch_size=eval_batch_size,
+            )
         )
-    )
 
     results_log_statement = (
         f"| validation "
@@ -436,33 +451,32 @@ def main(args):
     print("-" * 150)
     print(results_log_statement)
     print("-" * 150)
-    f.close()
 
     # Run testing
     # =====================================================================
 
-    f = open("test_out.txt", "w")
-    # f_metrics = open("test_out_metrics.txt", "w")
-
+    test_output_path = os.path.join(output_path, "test_out.txt")
     print("\n << * >> Running model testing.", end="\n\n")
-    (
-        test_lm_loss,
-        test_correct_msg,
-        test_correct_bits_msg,
-        test_meteor,
-        test_l2_sbert,
-    ) = evaluate(
-        test_data,
-        all_msgs,
-        corpus,
-        sbert_model=sbert_model,
-        model_gen=model_gen,
-        model_disc=model_disc,
-        criterion_lm=criterion_lm,
-        out_file=f,
-        batch_size=test_batch_size,
-        langModel=langModel,
-    )
+
+    with open(test_output_path, "w") as out_file:
+        (
+            test_lm_loss,
+            test_correct_msg,
+            test_correct_bits_msg,
+            test_meteor,
+            test_l2_sbert,
+        ) = evaluate(
+            test_data,
+            all_msgs,
+            corpus,
+            sbert_model=sbert_model,
+            model_gen=model_gen,
+            model_disc=model_disc,
+            criterion_lm=criterion_lm,
+            out_file=out_file,
+            batch_size=test_batch_size,
+            langModel=langModel,
+        )
 
     results_log_statement = (
         f"| validation "
@@ -478,7 +492,6 @@ def main(args):
     print("-" * 150)
     print(results_log_statement)
     print("-" * 150)
-    f.close()
 
 
 if __name__ == "__main__":
@@ -490,7 +503,10 @@ if __name__ == "__main__":
         description="PyTorch PennTreeBank RNN/LSTM Language Model"
     )
     parser.add_argument(
-        "--data", type=str, default="data/penn/", help="location of the data corpus"
+        "--data",
+        type=str,
+        default="wikitext-2",
+        help="location of the data corpus",
     )
 
     parser.add_argument("--bptt", type=int, default=80, help="sequence length")
@@ -512,10 +528,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--gen_path", type=str, default=randomhash + ".pt", help="path to the generator"
+        "--gen_model",
+        type=str,
+        default=randomhash + ".pt",
+        help="path to the generator",
     )
     parser.add_argument(
-        "--disc_path",
+        "--disc_model",
         type=str,
         default=randomhash + ".pt",
         help="path to the discriminator",

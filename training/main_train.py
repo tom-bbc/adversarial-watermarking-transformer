@@ -2,26 +2,39 @@
 import argparse
 import hashlib
 import os
-import pickle
+import sys
 import time
+from pathlib import Path
 
-import model_mt_autoenc_cce
 import numpy as np
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-from utils import batchify, generate_msgs, get_batch_different, repackage_hidden
+
+# Local imports
+path_root = Path(__file__).parents[1]
+sys.path.append(str(path_root))
 
 import data_processing.data as data
 import training.lang_model as lang_model
+from data_processing.utils import (
+    batchify,
+    generate_msgs,
+    get_batch_different,
+    repackage_hidden,
+)
 from training.fb_semantic_encoder import BLSTMEncoder
+from training.model_mt_autoenc_cce import (
+    TranslatorDiscriminatorModel,
+    TranslatorGeneratorModel,
+)
 
 # Entrypoint
 parser = argparse.ArgumentParser(
     description="PyTorch PennTreeBank RNN/LSTM Language Model"
 )
 parser.add_argument(
-    "--data", type=str, default="data/penn/", help="location of the data corpus"
+    "--data", type=str, default="wikitext-2", help="location of the data corpus"
 )
 parser.add_argument("--emsize", type=int, default=512, help="size of word embeddings")
 parser.add_argument("--lr", type=float, default=0.00003, help="initial learning rate")
@@ -322,7 +335,8 @@ if os.path.exists(fn):
     corpus = torch.load(fn, map_location=map_location, weights_only=False)
 else:
     print("Producing dataset...")
-    corpus = data.Corpus(args.data)
+    dataset_path = os.path.join(path_root, "datasets", args.data)
+    corpus = data.Corpus(dataset_path)
     torch.save(corpus, fn)
 
 
@@ -393,7 +407,7 @@ else:
     # Generate random msgs
     all_msgs = generate_msgs(args)
 
-    model_gen = model_mt_autoenc_cce.TranslatorGeneratorModel(
+    model_gen = TranslatorGeneratorModel(
         ntokens,
         args.emsize,
         args.msg_len,
@@ -408,7 +422,7 @@ else:
         args.attn_heads,
         autoenc_model,
     )
-    model_disc = model_mt_autoenc_cce.TranslatorDiscriminatorModel(
+    model_disc = TranslatorDiscriminatorModel(
         args.emsize,
         args.adv_encoding_layers,
         args.dropout_transformer,
@@ -837,6 +851,11 @@ def train():
 print("Parsing parameters...")
 
 # Loop over epochs.
+model_directory = os.path.join(path_root, "models")
+Path(model_directory).mkdir(parents=True, exist_ok=True)
+output_model_name = os.path.join(model_directory, args.save)
+
+
 lr = args.lr
 best_val_loss = []
 G_losses = []
@@ -939,7 +958,7 @@ try:
             log_file_loss_val.flush()
 
             if val_loss_gen_tot2 < stored_loss:
-                model_save(args.save)
+                model_save(output_model_name)
                 print("Saving Averaged!")
                 stored_loss = val_loss_gen_tot2
 
@@ -1002,22 +1021,22 @@ try:
             log_file_loss_val.flush()
 
             if val_loss_gen_tot < stored_loss:
-                model_save(args.save)
+                model_save(output_model_name)
                 print("Saving model (new best generator validation)")
                 stored_loss = val_loss_gen_tot
 
             if val_loss_msg < stored_loss_msg:
-                model_save(args.save + "_msg")
+                model_save(output_model_name + "_msg")
                 print("Saving model (new best msg validation)")
                 stored_loss_msg = val_loss_msg
 
             if val_loss_text < stored_loss_text:
-                model_save(args.save + "_reconst")
+                model_save(output_model_name + "_reconst")
                 print("Saving model (new best reconstruct validation)")
                 stored_loss_text = val_loss_text
 
             if epoch % args.save_interval == 0:
-                model_save(args.save + "_interval")
+                model_save(output_model_name + "_interval")
                 print("Saving model (intervals)")
 
             if (
@@ -1046,7 +1065,8 @@ try:
 
             if args.optimizer == "sgd" and epoch in args.when:
                 print("Saving model before learning rate decreased")
-                model_save("{}.e{}".format(args.save, epoch))
+                model_save("{}.e{}".format(output_model_name, epoch))
+
                 print("Dividing learning rate by 10")
                 optimizer_gen.param_groups[0]["lr"] /= 10.0
                 optimizer_disc.param_groups[0]["lr"] /= 10.0
@@ -1059,7 +1079,7 @@ except KeyboardInterrupt:
 
 
 # Load the best saved model.
-model_load(args.save)
+model_load(output_model_name)
 
 if args.cuda:
     model_gen = model_gen.cuda()
