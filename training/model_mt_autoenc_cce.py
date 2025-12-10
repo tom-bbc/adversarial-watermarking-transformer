@@ -4,22 +4,23 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from locked_dropout import LockedDropout
 from torch.autograd import Variable
 
-from training.locked_dropout import LockedDropout
 
-
-def sample_gumbel(x, device="cuda"):
-    noise = torch.randn(x.size(), device=device, dtype=torch.float32)
+def sample_gumbel(x):
+    device = x.device
+    noise = torch.empty(x.size(), device=device).uniform_()
 
     eps = 1e-20
     noise.add_(eps).log_().neg_()
     noise.add_(eps).log_().neg_()
+
     return Variable(noise)
 
 
-def gumbel_softmax_sample(x, tau=0.5, device="cuda"):
-    noise = sample_gumbel(x, device=device)
+def gumbel_softmax_sample(x, tau=0.5):
+    noise = sample_gumbel(x)
     y = (F.log_softmax(x, dim=-1) + noise) / tau
     # ysft = F.softmax(y)
     return y.view_as(x)
@@ -46,7 +47,10 @@ class PositionalEncoding(nn.Module):
 
 
 class TranslatorGeneratorModel(nn.Module):
-    """Container module with an encoder followed by a classification over vocab. The output is then passed to the message encoder."""
+    """
+    Container module with an encoder followed by a classification over vocab.
+    The output is then passed to the message encoder.
+    """
 
     def __init__(
         self,
@@ -103,10 +107,10 @@ class TranslatorGeneratorModel(nn.Module):
         else:
             self.msg_in_mlp = [
                 nn.Linear(
-                    msg_len if l == 0 else msg_in_mlp_nodes[l - 1],
-                    msg_in_mlp_nodes[l] if l != msg_in_mlp_layers - 1 else ninp,
+                    msg_len if layer == 0 else msg_in_mlp_nodes[layer - 1],
+                    msg_in_mlp_nodes[layer] if layer != msg_in_mlp_layers - 1 else ninp,
                 )
-                for l in range(msg_in_mlp_layers)
+                for layer in range(msg_in_mlp_layers)
             ]
             self.msg_in_mlp = torch.nn.ModuleList(self.msg_in_mlp)
 
@@ -155,7 +159,7 @@ class TranslatorGeneratorModel(nn.Module):
         msg_decoder_out = self.msg_decoder(input)
 
         m = nn.AdaptiveAvgPool1d(1)
-        m2 = nn.AdaptiveMaxPool1d(1)
+        # m2 = nn.AdaptiveMaxPool1d(1)
 
         msg_dec_avg = m(
             msg_decoder_out.view(
@@ -203,8 +207,9 @@ class TranslatorGeneratorModel(nn.Module):
         if self.msg_in_mlp_layers == 1:
             prev_msg_out = F.relu(self.msg_in_mlp(prev_msg_out))
         else:
-            for l, ff in enumerate(self.msg_in_mlp):
+            for layer, ff in enumerate(self.msg_in_mlp):
                 prev_msg_out = F.relu(ff(prev_msg_out))
+
         msg_out = prev_msg_out
 
         # add the message to the sentence embedding
@@ -256,7 +261,7 @@ class TranslatorGeneratorModel(nn.Module):
         )
 
         sent_decoded_vocab_soft = gumbel_softmax_sample(
-            sent_decoded_vocab, tau=gumbel_temp, device=device
+            sent_decoded_vocab, tau=gumbel_temp
         )
 
         return (

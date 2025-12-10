@@ -9,7 +9,6 @@ source "$ROOT/.env/bin/activate"
 python3 "$ROOT/training/main_train.py" \
     --msg_len 4 \
     --data wikitext-2 \
-    --batch_size 80  \
     --epochs 200 \
     --save WT2_mt_noft \
     --optimizer adam \
@@ -18,9 +17,14 @@ python3 "$ROOT/training/main_train.py" \
     --use_lm_loss 0 \
     --use_semantic_loss 0 \
     --discr_interval 1 \
-    --msg_weight 5 \
-    --gen_weight 1.5 \
     --reconst_weight 1.5 \
-    --scheduler 1
+    --scheduler 1 \
+    --gumbel_temp 5.0 \
+    --lr 0.00005 \
+    --disc_lr 0.0001 \
+    --batch_size 40  \
+    --msg_weight 2 \
+    --gen_weight 1
+
 
 echo -e "\n << * >> Completed pre-training stage."

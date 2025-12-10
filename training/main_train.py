@@ -1,4 +1,8 @@
+###############################################################################
 # Imports
+###############################################################################
+
+# External imports
 import argparse
 import hashlib
 import os
@@ -29,281 +33,20 @@ from training.model_mt_autoenc_cce import (
     TranslatorGeneratorModel,
 )
 
-# Entrypoint
-parser = argparse.ArgumentParser(
-    description="PyTorch PennTreeBank RNN/LSTM Language Model"
-)
-parser.add_argument(
-    "--data", type=str, default="wikitext-2", help="location of the data corpus"
-)
-parser.add_argument("--emsize", type=int, default=512, help="size of word embeddings")
-parser.add_argument("--lr", type=float, default=0.00003, help="initial learning rate")
-parser.add_argument(
-    "--disc_lr", type=float, default=0.0001, help="initial learning rate"
-)
-parser.add_argument("--epochs", type=int, default=8000, help="upper epoch limit")
-parser.add_argument(
-    "--batch_size", type=int, default=80, metavar="N", help="batch size"
-)
-parser.add_argument("--bptt", type=int, default=80, help="sequence length")
-parser.add_argument(
-    "--fixed_length",
-    type=int,
-    default=0,
-    help="whether to use a fixed input length (bptt value)",
-)
-parser.add_argument(
-    "--dropout_transformer",
-    type=float,
-    default=0.1,
-    help="dropout applied to transformer layers (0 = no dropout)",
-)
-parser.add_argument(
-    "--dropouti",
-    type=float,
-    default=0.1,
-    help="dropout for input embedding layers (0 = no dropout)",
-)
-parser.add_argument(
-    "--dropoute",
-    type=float,
-    default=0.1,
-    help="dropout to remove words from embedding layer (0 = no dropout)",
-)
-parser.add_argument("--seed", type=int, default=1111, help="random seed")
-parser.add_argument("--nonmono", type=int, default=5, help="random seed")
-parser.add_argument("--cuda", action="store_false", help="do not use CUDA")
-parser.add_argument(
-    "--log-interval", type=int, default=200, metavar="N", help="report interval"
-)
-randomhash = "".join(str(time.time()).split("."))
-parser.add_argument(
-    "--save", type=str, default=randomhash, help="path to save the final model"
-)
-parser.add_argument(
-    "--save_interval", type=int, default=20, help="saving models regualrly"
-)
-
-parser.add_argument("--resume", type=str, default="", help="path of model to resume")
-parser.add_argument(
-    "--optimizer", type=str, default="sgd", help="optimizer to use (sgd, adam)"
-)
-parser.add_argument(
-    "--wdecay", type=float, default=1.2e-6, help="weight decay applied to all weights"
-)
-parser.add_argument(
-    "--when",
-    nargs="+",
-    type=int,
-    default=[-1],
-    help="When (which epochs) to divide the learning rate by 10 - accepts multiple",
-)
-
-# Message arguments
-parser.add_argument(
-    "--msg_len", type=int, default=64, help="The length of the binary message"
-)
-parser.add_argument(
-    "--msgs_num", type=int, default=3, help="The total number of messages"
-)
-parser.add_argument(
-    "--msg_in_mlp_layers", type=int, default=1, help="message encoding FC layers number"
-)
-parser.add_argument(
-    "--msg_in_mlp_nodes", type=list, default=[], help="nodes in the MLP of the message"
-)
-
-# Transformer arguments
-parser.add_argument(
-    "--attn_heads",
-    type=int,
-    default=4,
-    help="The number of attention heads in the transformer",
-)
-parser.add_argument(
-    "--encoding_layers", type=int, default=3, help="The number of encoding layers"
-)
-parser.add_argument(
-    "--shared_encoder",
-    type=bool,
-    default=True,
-    help="If the message encoder and language encoder will share weights",
-)
-
-# Adv. transformer arguments
-parser.add_argument(
-    "--adv_attn_heads",
-    type=int,
-    default=4,
-    help="The number of attention heads in the adversary transformer",
-)
-parser.add_argument(
-    "--adv_encoding_layers",
-    type=int,
-    default=3,
-    help="The number of encoding layers in the adversary transformer",
-)
-
-# Gumbel softmax arguments
-parser.add_argument(
-    "--gumbel_temp", type=int, default=0.5, help="Gumbel softmax temprature"
-)
-
-# Adam optimizer arguments
-parser.add_argument(
-    "--scheduler",
-    type=int,
-    default=1,
-    help="whether to schedule the lr according to the formula in: Attention is all you need",
-)
-parser.add_argument(
-    "--warm_up", type=int, default=6000, help="number of linear warm up steps"
-)
-parser.add_argument("--beta1", type=float, default=0.9, help="Adam beta1 parameter")
-parser.add_argument("--beta2", type=float, default=0.98, help="Adam beta2 parameter")
-parser.add_argument("--eps", type=float, default=1e-9, help="Adam eps parameter")
-
-# GAN arguments
-parser.add_argument(
-    "--msg_weight",
-    type=float,
-    default=25,
-    help="The factor multiplied with the message loss",
-)
-
-# FB InferSent semantic loss
-parser.add_argument(
-    "--use_semantic_loss", type=int, default=1, help="whether to use semantic loss"
-)
-parser.add_argument(
-    "--glove_path",
-    type=str,
-    default="models/sent_encoder/GloVe/glove.840B.300d.txt",
-    help="path to glove embeddings",
-)
-parser.add_argument(
-    "--infersent_path",
-    type=str,
-    default="models/sent_encoder/infersent2.pkl",
-    help="path to the trained sentence semantic model",
-)
-parser.add_argument(
-    "--sem_weight",
-    type=float,
-    default=40,
-    help="The factor multiplied with the semantic loss",
-)
-
-# Language loss
-parser.add_argument(
-    "--use_lm_loss", type=int, default=1, help="whether to use language model loss"
-)
-parser.add_argument(
-    "--lm_weight", type=float, default=1, help="The factor multiplied with the lm loss"
-)
-parser.add_argument(
-    "--lm_ckpt",
-    type=str,
-    default="models/WT2_lm.pt",
-    help="path to the fine tuned language model",
-)
-
-# Reconstruction loss
-parser.add_argument(
-    "--use_reconst_loss",
-    type=int,
-    default=1,
-    help="whether to use language reconstruction loss",
-)
-parser.add_argument(
-    "--reconst_weight",
-    type=float,
-    default=1,
-    help="The factor multiplied with the reconstruct loss",
-)
-
-# Language model params.
-parser.add_argument(
-    "--model", type=str, default="LSTM", help="type of recurrent net (LSTM, QRNN, GRU)"
-)
-parser.add_argument(
-    "--emsize_lm", type=int, default=400, help="size of word embeddings"
-)
-parser.add_argument(
-    "--nhid", type=int, default=1150, help="number of hidden units per layer"
-)
-parser.add_argument("--nlayers", type=int, default=3, help="number of layers")
-parser.add_argument(
-    "--dropout",
-    type=float,
-    default=0.4,
-    help="dropout applied to layers (0 = no dropout)",
-)
-parser.add_argument(
-    "--dropouth",
-    type=float,
-    default=0.3,
-    help="dropout for rnn layers (0 = no dropout)",
-)
-parser.add_argument(
-    "--dropouti_lm",
-    type=float,
-    default=0.65,
-    help="dropout for input embedding layers (0 = no dropout)",
-)
-parser.add_argument(
-    "--dropoute_lm",
-    type=float,
-    default=0.1,
-    help="dropout to remove words from embedding layer (0 = no dropout)",
-)
-parser.add_argument(
-    "--wdrop",
-    type=float,
-    default=0,
-    help="amount of weight dropout to apply to the RNN hidden to hidden matrix",
-)
-
-# GAN arguments
-parser.add_argument(
-    "--discr_interval", type=int, default=1, help="when to update the discriminator"
-)
-parser.add_argument(
-    "--autoenc_path",
-    type=str,
-    default="",
-    help="path of the autoencoder path to use as init to the generator, in case the model is pretrained as autoencoder only",
-)
-parser.add_argument(
-    "--gen_weight",
-    type=float,
-    default=2,
-    help="The factor multiplied with the gen loss",
-)
-
-
-args = parser.parse_args()
-args.tied = True
-args.tied_lm = True
-
-log_file_loss_val = open("log_file_loss_val.txt", "w")
-log_file_loss_train = open("log_file_loss_train.txt", "w")
-
-# Set the random seed manually for reproducibility.
-np.random.seed(args.seed)
-torch.manual_seed(args.seed)
-if torch.cuda.is_available():
-    if not args.cuda:
-        print("WARNING: You have a CUDA device, so you should probably run with --cuda")
-    else:
-        torch.cuda.manual_seed(args.seed)
-
 ###############################################################################
-# Load data
+# Helper functions for model saving and loading
 ###############################################################################
 
 
-def model_save(fn):
+def model_save(
+    fn,
+    model_gen,
+    model_disc,
+    criterion,
+    criterion_reconst,
+    optimizer_gen,
+    optimizer_disc,
+):
     with open(fn + "_gen.pt", "wb") as f:
         torch.save([model_gen, criterion, criterion_reconst, optimizer_gen], f)
 
@@ -312,8 +55,6 @@ def model_save(fn):
 
 
 def model_load(fn):
-    global model_gen, model_disc, criterion, criterion_reconst, optimizer_gen, optimizer_disc
-
     map_location = "cpu" if args.cuda else "cuda"
 
     with open(fn + "_gen.pt", "rb") as f:
@@ -326,54 +67,22 @@ def model_load(fn):
             f, map_location=map_location, weights_only=False
         )
 
+    return (
+        model_gen,
+        model_disc,
+        criterion,
+        criterion_reconst,
+        optimizer_gen,
+        optimizer_disc,
+    )
 
-map_location = "cpu" if args.cuda else "cuda"
-fn = "corpus.{}.data".format(hashlib.md5(args.data.encode()).hexdigest())
-
-if os.path.exists(fn):
-    print("Loading cached dataset...")
-    corpus = torch.load(fn, map_location=map_location, weights_only=False)
-else:
-    print("Producing dataset...")
-    dataset_path = os.path.join(path_root, "datasets", args.data)
-    corpus = data.Corpus(dataset_path)
-    torch.save(corpus, fn)
-
-
-eval_batch_size = 10
-test_batch_size = 1
-train_data = batchify(corpus.train, args.batch_size, args)
-val_data = batchify(corpus.valid, eval_batch_size, args)
-test_data = batchify(corpus.test, test_batch_size, args)
 
 ###############################################################################
-# Build the model
+# Helper functions for model training stages
 ###############################################################################
 
-criterion = None
-criterion_reconst = None
-criterion_sem = None
-criterion_lm = None
 
-ntokens = len(corpus.dictionary)
-print(ntokens)
-word2idx = corpus.dictionary.word2idx
-idx2word = corpus.dictionary.idx2word
-
-if args.autoenc_path != "":
-    with open(args.autoenc_path, "rb") as f:
-        autoenc_model, _, _ = torch.load(
-            f, map_location=map_location, weights_only=False
-        )
-else:
-    autoenc_model = None
-
-# Global variable for the number of steps (batches)
-step_num = 1
-discr_step_num = 1
-
-
-def learing_rate_scheduler():
+def learing_rate_scheduler(step_num):
     d_model = args.emsize
     warm_up = args.warm_up
     lr = np.power(d_model, -0.8) * min(
@@ -382,7 +91,7 @@ def learing_rate_scheduler():
     return lr
 
 
-def learing_rate_disc_scheduler():
+def learing_rate_disc_scheduler(discr_step_num):
     d_model = args.emsize
     warm_up = args.warm_up
     lr = np.power(d_model, -1.1) * min(
@@ -391,166 +100,34 @@ def learing_rate_disc_scheduler():
     return lr
 
 
-if args.resume:
-    all_msgs = np.loadtxt("msgs.txt")
-    print("Resuming model ...")
-    model_load(args.resume)
-
-    optimizer_gen.param_groups[0]["lr"] = (
-        learing_rate_scheduler() if args.scheduler else args.lr
-    )
-    optimizer_disc.param_groups[0]["lr"] = (
-        learing_rate_disc_scheduler() if args.scheduler else args.lr
-    )
-
-else:
-    # Generate random msgs
-    all_msgs = generate_msgs(args)
-
-    model_gen = TranslatorGeneratorModel(
-        ntokens,
-        args.emsize,
-        args.msg_len,
-        args.msg_in_mlp_layers,
-        args.msg_in_mlp_nodes,
-        args.encoding_layers,
-        args.dropout_transformer,
-        args.dropouti,
-        args.dropoute,
-        args.tied,
-        args.shared_encoder,
-        args.attn_heads,
-        autoenc_model,
-    )
-    model_disc = TranslatorDiscriminatorModel(
-        args.emsize,
-        args.adv_encoding_layers,
-        args.dropout_transformer,
-        args.adv_attn_heads,
-        args.dropouti,
-    )
-    for p in model_disc.parameters():
-        if p.dim() > 1:
-            nn.init.xavier_uniform_(p)
-
-criterion = nn.BCEWithLogitsLoss()
-# if not criterion:
-#     criterion = nn.BCEWithLogitsLoss()
-# else:
-#     criterion = None
-
-criterion_sem = nn.L1Loss()
-# if args.use_semantic_loss and not criterion_sem:
-#     criterion_sem = nn.L1Loss()
-# else:
-#     criterion_sem = None
-
-criterion_lm = nn.CrossEntropyLoss()
-# if args.use_lm_loss and not criterion_lm:
-#     criterion_lm = nn.CrossEntropyLoss()
-# else:
-#     criterion_lm = None
-
-criterion_reconst = nn.CrossEntropyLoss()
-# if args.use_reconst_loss and not criterion_reconst:
-#     criterion_reconst = nn.CrossEntropyLoss()
-# else:
-#     criterion_reconst = None
-
-# Semantic model
-if args.use_semantic_loss:
-    modelSentEncoder = BLSTMEncoder(word2idx, idx2word, args.glove_path)
-    encoderState = torch.load(
-        args.infersent_path, map_location=map_location, weights_only=False
-    )
-    state = modelSentEncoder.state_dict()
-    for k in encoderState:
-        if k in state:
-            state[k] = encoderState[k]
-    modelSentEncoder.load_state_dict(state)
-
-# Language model
-if args.use_lm_loss:
-    with open(args.lm_ckpt, "rb") as f:
-        pretrained_lm, _, _ = torch.load(
-            f, map_location=map_location, weights_only=False
-        )
-        langModel = lang_model.RNNModel(
-            args.model,
-            ntokens,
-            args.emsize_lm,
-            args.nhid,
-            args.nlayers,
-            args.dropout,
-            args.dropouth,
-            args.dropouti_lm,
-            args.dropoute_lm,
-            args.wdrop,
-            args.tied_lm,
-            pretrained_lm,
-        )
-
-    del pretrained_lm
-
-
-if args.cuda:
-    model_gen = model_gen.cuda()
-    model_disc = model_disc.cuda()
-    criterion = criterion.cuda()
-    criterion_reconst = criterion_reconst.cuda()
-    if args.use_semantic_loss:
-        criterion_sem = criterion_sem.cuda()
-        modelSentEncoder = modelSentEncoder.cuda()
-    if args.use_lm_loss:
-        criterion_lm = criterion_lm.cuda()
-        langModel = langModel.cuda()
-
-# List model parameters
-params = (
-    list(model_gen.parameters())
-    + list(criterion.parameters())
-    + list(criterion_reconst.parameters())
-    + list(model_disc.parameters())
-)
-params_gen = model_gen.parameters()
-params_disc = model_disc.parameters()
-
-total_params = sum(
-    x.size()[0] * x.size()[1] if len(x.size()) > 1 else x.size()[0]
-    for x in params
-    if x.size()
-)
-print("Args:", args)
-print("Model total parameters:", total_params)
-
-
-# convert word ids to text
-def convert_idx_to_words(idx):
-    batch_list = []
-    for i in range(0, idx.size(1)):
-        sent_list = []
-        for j in range(0, idx.size(0)):
-            sent_list.append(corpus.dictionary.idx2word[idx[j, i]])
-        batch_list.append(sent_list)
-    return batch_list
-
-
-# Conventions for real and fake labels during training
-real_label = 1
-fake_label = 0
-
 ###############################################################################
-# Training code
+# Validation code
 ###############################################################################
 
 
-def evaluate(data_source, batch_size=10):
+def evaluate(
+    model_gen,
+    model_disc,
+    data_source,
+    real_label,
+    fake_label,
+    all_msgs,
+    criterion,
+    criterion_reconst,
+    criterion_sem=None,
+    criterion_lm=None,
+    modelSentEncoder=None,
+    langModel=None,
+    batch_size=10,
+):
     # Turn on evaluation mode which disables dropout.
     model_gen.eval()
     model_disc.eval()
-    if args.use_semantic_loss:
+
+    if args.use_semantic_loss and modelSentEncoder is not None:
         modelSentEncoder.eval()
-    if args.use_lm_loss:
+
+    if args.use_lm_loss and langModel is not None:
         langModel.eval()
 
     total_loss_gen = 0
@@ -562,8 +139,12 @@ def evaluate(data_source, batch_size=10):
 
     batches_count = 0
     for i in range(0, data_source.size(0) - args.bptt, args.bptt):
-        if args.use_lm_loss:
+
+        if args.use_lm_loss and langModel is not None:
             hidden = langModel.init_hidden(batch_size)
+        else:
+            hidden = None
+
         data, msgs, targets = get_batch_different(
             data_source, i, args, all_msgs, evaluation=True
         )
@@ -572,6 +153,10 @@ def evaluate(data_source, batch_size=10):
         fake_data_emb, fake_one_hot, fake_data_prob = model_gen.forward_sent(
             data, msgs, args.gumbel_temp
         )
+
+        # Clip probabilities to prevent log(0) and NaN
+        fake_data_prob = torch.clamp(fake_data_prob, min=1e-7, max=1.0 - 1e-7)
+
         msg_out = model_gen.forward_msg_decode(fake_data_emb)
 
         # Get prediction (and the loss) of the discriminator on the real sequence.
@@ -598,7 +183,11 @@ def evaluate(data_source, batch_size=10):
         errG_disc = criterion(fake_out, label.float())
 
         # Semantic loss
-        if args.use_semantic_loss:
+        if (
+            args.use_semantic_loss
+            and modelSentEncoder is not None
+            and criterion_sem is not None
+        ):
             orig_sem_emb = modelSentEncoder.forward_encode_nopad(data)
             fake_sem_emb = modelSentEncoder.forward_encode_nopad(
                 fake_one_hot, one_hot=True
@@ -610,16 +199,23 @@ def evaluate(data_source, batch_size=10):
         msg_loss = criterion(msg_out, msgs)
 
         # LM loss of the generator
-        if args.use_lm_loss:
+        if (
+            args.use_lm_loss
+            and langModel is not None
+            and criterion_lm is not None
+            and hidden is not None
+        ):
             lm_targets = fake_one_hot[1 : fake_one_hot.size(0)]
             lm_targets = torch.argmax(lm_targets, dim=-1)
             lm_targets = lm_targets.view(
                 lm_targets.size(0) * lm_targets.size(1),
             )
+
             lm_inputs = fake_one_hot[0 : fake_one_hot.size(0) - 1]
             lm_out, hidden = langModel(lm_inputs, hidden, decode=True, one_hot=True)
             lm_loss = criterion_lm(lm_out, lm_targets)
             total_loss_lm += lm_loss.data
+
             hidden = repackage_hidden(hidden)
 
         # Reconstruction loss
@@ -632,22 +228,49 @@ def evaluate(data_source, batch_size=10):
         batches_count = batches_count + 1
 
     if args.use_semantic_loss:
-        total_loss_sem = total_loss_sem.item()
+        total_loss_sem = total_loss_sem.item()  # type: ignore
 
     if args.use_lm_loss:
-        total_loss_lm = total_loss_lm.item()
+        total_loss_lm = total_loss_lm.item()  # type: ignore
 
     return (
-        total_loss_reconst.item() / batches_count,
-        total_loss_gen.item() / batches_count,
-        total_loss_msg.item() / batches_count,
+        total_loss_reconst.item() / batches_count,  # type: ignore
+        total_loss_gen.item() / batches_count,  # type: ignore
+        total_loss_msg.item() / batches_count,  # type: ignore
         total_loss_sem / batches_count,
         total_loss_lm / batches_count,
-        total_loss_disc.item() / batches_count,
+        total_loss_disc.item() / batches_count,  # type: ignore
     )
 
 
-def train():
+###############################################################################
+# Training code
+###############################################################################
+
+
+def training_epoch(
+    model_gen,
+    model_disc,
+    langModel,
+    modelSentEncoder,
+    train_data,
+    all_msgs,
+    real_label,
+    fake_label,
+    criterion_lm,
+    optimizer_gen,
+    optimizer_disc,
+    epoch,
+    step_num,
+    discr_step_num,
+    criterion,
+    criterion_reconst,
+    criterion_sem,
+    sem_losses,
+    G_losses,
+    msg_losses,
+    D_losses,
+):
     # Turn on training mode which enables dropout.
     total_loss_gen = 0
     total_loss_msg = 0
@@ -655,8 +278,11 @@ def train():
     total_loss_disc = 0
     total_loss_reconst = 0
     total_loss_lm = 0
+
     if args.use_lm_loss:
         hidden = langModel.init_hidden(args.batch_size)
+    else:
+        hidden = None
 
     start_time = time.time()
     batch, i = 0, 0
@@ -704,8 +330,10 @@ def train():
 
         # Update learning rate
         if args.scheduler:
-            optimizer_gen.param_groups[0]["lr"] = learing_rate_scheduler()
-            optimizer_disc.param_groups[0]["lr"] = learing_rate_disc_scheduler()
+            optimizer_gen.param_groups[0]["lr"] = learing_rate_scheduler(step_num)
+            optimizer_disc.param_groups[0]["lr"] = learing_rate_disc_scheduler(
+                discr_step_num
+            )
 
         # Update Disc Network
         # Maximize log (D(x) + log (1 - D(G(z)))
@@ -728,6 +356,10 @@ def train():
         fake_data_emb, fake_one_hot, fake_data_prob = model_gen.forward_sent(
             data, msgs, args.gumbel_temp
         )
+
+        # Clip probabilities to prevent log(0) and NaN
+        fake_data_prob = torch.clamp(fake_data_prob, min=1e-7, max=1.0 - 1e-7)
+
         msg_out = model_gen.forward_msg_decode(fake_data_emb)
 
         # Classify all batch with the discriminator
@@ -751,6 +383,7 @@ def train():
         # Classify with the updated discriminator #
         fake_out2 = model_disc(fake_data_emb)
         errG_disc = criterion(fake_out2, label.float())
+
         errG_msg = criterion(msg_out, msgs)
         errG_reconst = criterion_reconst(fake_data_prob, data.view(-1))
         total_loss_reconst += errG_reconst.data
@@ -794,7 +427,7 @@ def train():
         # Update the generator
         optimizer_gen.step()
 
-        # save losses #
+        # Save losses
         G_losses.append(errG_disc.item())
         msg_losses.append(errG_msg.item())
         D_losses.append(errD.item())
@@ -814,22 +447,16 @@ def train():
 
             elapsed = time.time() - start_time
             print(
-                "| epoch {:3d} | {:5d}/{:5d} batches | gen lr {:05.5f} | disc lr {:05.5f} | ms/batch {:5.2f} | "
-                "gen loss {:5.2f} | disc loss {:5.2f} | msg loss {:5.2f} | sem loss {:5.2f} | reconst loss {:5.4f} | lm loss {:5.4f}".format(
-                    epoch,
-                    batch,
-                    len(train_data) // args.bptt,
-                    optimizer_gen.param_groups[0]["lr"],
-                    optimizer_disc.param_groups[0]["lr"],
-                    elapsed * 1000 / args.log_interval,
-                    cur_loss_gen,
-                    cur_loss_disc,
-                    cur_loss_msg,
-                    cur_loss_sem,
-                    cur_loss_reconst,
-                    cur_loss_lm,
-                )
+                f"| epoch {epoch:3d} | "
+                f"{batch:5d}/{len(train_data) // args.bptt:5d} batches | "
+                f"gen lr {optimizer_gen.param_groups[0]['lr']:05.5f} | "
+                f"disc lr {optimizer_disc.param_groups[0]['lr']:05.5f} | "
+                f"ms/batch {elapsed * 1000 / args.log_interval:5.2f} | "
+                f"gen loss {cur_loss_gen:5.2f} | disc loss {cur_loss_disc:5.2f} | "
+                f"msg loss {cur_loss_msg:5.2f} | sem loss {cur_loss_sem:5.2f} | "
+                f"reconst loss {cur_loss_reconst:5.4f} | lm loss {cur_loss_lm:5.4f}"
             )
+
             total_loss_gen = 0
             total_loss_msg = 0
             total_loss_disc = 0
@@ -841,275 +468,957 @@ def train():
         batch += 1
         i += seq_len
 
-        global step_num, discr_step_num
         step_num += 1
         discr_step_num += 1
 
     print("Training epoch complete.")
 
+    return (
+        model_gen,
+        model_disc,
+        langModel,
+        modelSentEncoder,
+        train_data,
+        all_msgs,
+        real_label,
+        fake_label,
+        criterion_lm,
+        optimizer_gen,
+        optimizer_disc,
+        epoch,
+        step_num,
+        discr_step_num,
+        criterion,
+        criterion_reconst,
+        criterion_sem,
+        sem_losses,
+        G_losses,
+        msg_losses,
+        D_losses,
+    )
 
-print("Parsing parameters...")
 
-# Loop over epochs.
-model_directory = os.path.join(path_root, "models")
-Path(model_directory).mkdir(parents=True, exist_ok=True)
-output_model_name = os.path.join(model_directory, args.save)
+###############################################################################
+# Main entrypoint of training script
+###############################################################################
 
 
-lr = args.lr
-best_val_loss = []
-G_losses = []
-D_losses = []
-msg_losses = []
-sem_losses = []
-stored_loss = 100000000
-stored_loss_msg = 100000000
-stored_loss_text = 100000000
+def main(args):
+    """Main entrypoint of training script"""
 
-# At any point you can hit Ctrl + C to break out of training early.
-try:
-    optimizer_gen = None
-    optimizer_disc = None
+    # Set random seeds for test reproducibility
+    # =========================================================================
 
-    # Ensure the optimizer is optimizing params, which includes both the model's weights as well as the criterion's weight (i.e. Adaptive Softmax)
-    if args.optimizer == "sgd":
-        optimizer_gen = torch.optim.SGD(
-            params_gen, lr=args.lr, weight_decay=args.wdecay
-        )
-        optimizer_disc = torch.optim.SGD(
-            params_disc, lr=args.lr, weight_decay=args.wdecay
-        )
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
 
-    if args.optimizer == "adam":
-        optimizer_gen = torch.optim.Adam(
-            params_gen,
-            lr=learing_rate_scheduler() if args.scheduler else args.lr,
-            betas=(args.beta1, args.beta2),
-            weight_decay=args.wdecay,
-        )
-        optimizer_disc = torch.optim.Adam(
-            params_disc,
-            lr=learing_rate_disc_scheduler() if args.scheduler else args.disc_lr,
-            betas=(args.beta1, args.beta2),
-            weight_decay=args.wdecay,
-        )
-
-    print("Starting training...")
-
-    for epoch in tqdm(range(1, args.epochs + 1), desc="Training epoch"):
-        epoch_start_time = time.time()
-        train()
-        if "t0" in optimizer_gen.param_groups[0]:
-            tmp = {}
-            for prm in model_gen.parameters():
-                tmp[prm] = prm.data.clone()
-                prm.data = optimizer_gen.state[prm]["ax"].clone()
-
-            tmp_disc = {}
-            for prm in model_disc.parameters():
-                tmp_disc[prm] = prm.data.clone()
-                prm.data = optimizer_disc.state[prm]["ax"].clone()
-
-            (
-                val_loss_reconst2,
-                val_loss_gen2,
-                val_loss_msg2,
-                val_loss_sem2,
-                val_loss_lm2,
-                val_loss_disc2,
-            ) = evaluate(val_data, eval_batch_size)
-            val_loss_gen_tot2 = (
-                val_loss_msg2
-                + val_loss_sem2
-                + val_loss_reconst2
-                + val_loss_gen2
-                + val_loss_lm2
-            )
-
-            print("-" * 89)
+    if torch.cuda.is_available():
+        if not args.cuda:
             print(
-                "| end of epoch {:3d} | time: {:5.2f}s | val gen loss {:5.2f} | "
-                "val disc loss {:5.2f} | val msg loss {:5.2f} | val sem loss {:5.2f} | val reconst loss {:5.2f} | val lm loss {:5.2f}".format(
-                    epoch,
-                    (time.time() - epoch_start_time),
-                    val_loss_gen2,
-                    val_loss_disc2,
-                    val_loss_msg2,
-                    val_loss_sem2,
-                    val_loss_reconst2,
-                    val_loss_lm2,
-                )
+                " -- * -- WARNING: You have a CUDA device, "
+                "so you should probably run with --cuda"
             )
-            print("-" * 89)
-            log_file_loss_val.write(
-                str(val_loss_gen2)
-                + ", "
-                + str(val_loss_disc2)
-                + ", "
-                + str(val_loss_msg2)
-                + ", "
-                + str(val_loss_sem2)
-                + ", "
-                + str(val_loss_reconst2)
-                + ", "
-                + str(val_loss_lm2)
-                + "\n"
+        else:
+            torch.cuda.manual_seed(args.seed)
+
+    # Load log files and dataset
+    # =========================================================================
+
+    map_location = "cpu" if args.cuda else "cuda"
+    fn = "corpus.{}.data".format(hashlib.md5(args.data.encode()).hexdigest())
+
+    if os.path.exists(fn):
+        print("Loading cached dataset...")
+        corpus = torch.load(fn, map_location=map_location, weights_only=False)
+    else:
+        print("Producing dataset...")
+        dataset_path = os.path.join(path_root, "datasets", args.data)
+        corpus = data.Corpus(dataset_path)
+        torch.save(corpus, fn)
+
+    eval_batch_size = 10
+    test_batch_size = 1
+
+    train_data = batchify(corpus.train, args.batch_size, args)
+    val_data = batchify(corpus.valid, eval_batch_size, args)
+    test_data = batchify(corpus.test, test_batch_size, args)
+
+    # Load the untrained base model and training criteria
+    # =========================================================================
+
+    criterion = None
+    criterion_reconst = None
+    criterion_sem = None
+    criterion_lm = None
+
+    ntokens = len(corpus.dictionary)
+    print(ntokens)
+    word2idx = corpus.dictionary.word2idx
+    idx2word = corpus.dictionary.idx2word
+
+    if args.autoenc_path != "":
+        with open(args.autoenc_path, "rb") as f:
+            autoenc_model, _, _ = torch.load(
+                f, map_location=map_location, weights_only=False
             )
-            log_file_loss_val.flush()
+    else:
+        autoenc_model = None
 
-            if val_loss_gen_tot2 < stored_loss:
-                model_save(output_model_name)
-                print("Saving Averaged!")
-                stored_loss = val_loss_gen_tot2
+    # Global variable for the number of steps (batches)
+    step_num = 1
+    discr_step_num = 1
 
-            for prm in model_gen.parameters():
-                prm.data = tmp[prm].clone()
+    if args.resume:
+        all_msgs = np.loadtxt("msgs.txt")
+        print("Resuming model ...")
+        (
+            model_gen,
+            model_disc,
+            criterion,
+            criterion_reconst,
+            optimizer_gen,
+            optimizer_disc,
+        ) = model_load(args.resume)
 
-            for prm in model_disc.parameters():
-                prm.data = tmp[prm].clone()
+        optimizer_gen.param_groups[0]["lr"] = (
+            learing_rate_scheduler(step_num) if args.scheduler else args.lr
+        )
+        optimizer_disc.param_groups[0]["lr"] = (
+            learing_rate_disc_scheduler(discr_step_num) if args.scheduler else args.lr
+        )
+
+    else:
+        # Generate random msgs
+        all_msgs = generate_msgs(args)
+
+        model_gen = TranslatorGeneratorModel(
+            ntokens,
+            args.emsize,
+            args.msg_len,
+            args.msg_in_mlp_layers,
+            args.msg_in_mlp_nodes,
+            args.encoding_layers,
+            args.dropout_transformer,
+            args.dropouti,
+            args.dropoute,
+            args.tied,
+            args.shared_encoder,
+            args.attn_heads,
+            autoenc_model,
+        )
+
+        model_disc = TranslatorDiscriminatorModel(
+            args.emsize,
+            args.adv_encoding_layers,
+            args.dropout_transformer,
+            args.adv_attn_heads,
+            args.dropouti,
+        )
+
+        for p in model_disc.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+
+    criterion = nn.BCEWithLogitsLoss()
+    # if not criterion:
+    #     criterion = nn.BCEWithLogitsLoss()
+    # else:
+    #     criterion = None
+
+    criterion_sem = nn.L1Loss()
+    # if args.use_semantic_loss and not criterion_sem:
+    #     criterion_sem = nn.L1Loss()
+    # else:
+    #     criterion_sem = None
+
+    criterion_lm = nn.CrossEntropyLoss()
+    # if args.use_lm_loss and not criterion_lm:
+    #     criterion_lm = nn.CrossEntropyLoss()
+    # else:
+    #     criterion_lm = None
+
+    criterion_reconst = nn.CrossEntropyLoss()
+    # if args.use_reconst_loss and not criterion_reconst:
+    #     criterion_reconst = nn.CrossEntropyLoss()
+    # else:
+    #     criterion_reconst = None
+
+    if args.cuda:
+        model_gen = model_gen.cuda()
+        model_disc = model_disc.cuda()
+        criterion = criterion.cuda()
+        criterion_reconst = criterion_reconst.cuda()
+
+    # Semantic model
+    if args.use_semantic_loss:
+        modelSentEncoder = BLSTMEncoder(word2idx, idx2word, args.glove_path)
+        encoderState = torch.load(
+            args.infersent_path, map_location=map_location, weights_only=False
+        )
+        state = modelSentEncoder.state_dict()
+
+        for k in encoderState:
+            if k in state:
+                state[k] = encoderState[k]
+
+        modelSentEncoder.load_state_dict(state)
+
+        if args.cuda:
+            criterion_sem = criterion_sem.cuda()
+            modelSentEncoder = modelSentEncoder.cuda()
+    else:
+        modelSentEncoder = None
+
+    # Language model
+    if args.use_lm_loss:
+        with open(args.lm_ckpt, "rb") as f:
+            pretrained_lm, _, _ = torch.load(
+                f, map_location=map_location, weights_only=False
+            )
+            langModel = lang_model.RNNModel(
+                args.model,
+                ntokens,
+                args.emsize_lm,
+                args.nhid,
+                args.nlayers,
+                args.dropout,
+                args.dropouth,
+                args.dropouti_lm,
+                args.dropoute_lm,
+                args.wdrop,
+                args.tied_lm,
+                pretrained_lm,
+            )
+
+        del pretrained_lm
+
+        if args.cuda:
+            criterion_lm = criterion_lm.cuda()
+            langModel = langModel.cuda()
+    else:
+        langModel = None
+
+    # List model parameters
+    params = (
+        list(model_gen.parameters())
+        + list(criterion.parameters())
+        + list(criterion_reconst.parameters())
+        + list(model_disc.parameters())
+    )
+    params_gen = model_gen.parameters()
+    params_disc = model_disc.parameters()
+
+    total_params = sum(
+        x.size()[0] * x.size()[1] if len(x.size()) > 1 else x.size()[0]
+        for x in params
+        if x.size()
+    )
+    print("Model total parameters:", total_params)
+
+    # Start training loop
+    # =========================================================================
+
+    # Conventions for real and fake labels during training
+    real_label = 1
+    fake_label = 0
+
+    # Loop over epochs.
+    model_directory = os.path.join(path_root, "models")
+    Path(model_directory).mkdir(parents=True, exist_ok=True)
+    output_model_name = os.path.join(model_directory, args.save)
+
+    best_val_loss = []
+    G_losses = []
+    D_losses = []
+    msg_losses = []
+    sem_losses = []
+    stored_loss = 100000000
+    stored_loss_msg = 100000000
+    stored_loss_text = 100000000
+
+    # At any point you can hit Ctrl + C to break out of training early.
+    try:
+        optimizer_gen = None
+        optimizer_disc = None
+
+        # Ensure the optimizer is optimizing params, which includes both the model's
+        # weights as well as the criterion's weight (i.e. Adaptive Softmax)
+        if args.optimizer == "sgd":
+            optimizer_gen = torch.optim.SGD(
+                params_gen, lr=args.lr, weight_decay=args.wdecay
+            )
+            optimizer_disc = torch.optim.SGD(
+                params_disc, lr=args.lr, weight_decay=args.wdecay
+            )
+
+        elif args.optimizer == "adam":
+            learning_rate = (
+                learing_rate_scheduler(step_num) if args.scheduler else args.lr
+            )
+            optimizer_gen = torch.optim.Adam(
+                params_gen,
+                lr=learning_rate,
+                betas=(args.beta1, args.beta2),
+                weight_decay=args.wdecay,
+            )
+
+            optimizer_disc = torch.optim.Adam(
+                params_disc,
+                lr=(
+                    learing_rate_disc_scheduler(discr_step_num)
+                    if args.scheduler
+                    else args.disc_lr
+                ),
+                betas=(args.beta1, args.beta2),
+                weight_decay=args.wdecay,
+            )
 
         else:
-            (
-                val_loss_reconst,
-                val_loss_gen,
-                val_loss_msg,
-                val_loss_sem,
-                val_loss_lm,
-                val_loss_disc,
-            ) = evaluate(val_data, eval_batch_size)
-
-            val_loss_gen_tot = (
-                val_loss_msg
-                + val_loss_sem
-                + val_loss_reconst
-                + val_loss_gen
-                + val_loss_lm
+            raise ValueError(
+                f" -- * -- Unsupported optimizer provided: {args.optimizer}"
             )
 
-            val_loss_text = val_loss_sem + val_loss_reconst + val_loss_lm
+        # Create output file to log validation loss over training
+        output_directory = os.path.join(path_root, "outputs")
+        Path(output_directory).mkdir(parents=True, exist_ok=True)
+        log_file_loss_val = os.path.join(output_directory, "log_file_loss_val.txt")
+        print("Starting training...")
 
-            print("-" * 89)
-            print(
-                "| end of epoch {:3d} | time: {:5.2f}s | val gen loss {:5.2f} | "
-                "val disc loss {:5.2f} | val msg loss {:5.2f} | val sem loss {:5.2f} | val reconst loss {:5.2f} | val lm loss {:5.2f}".format(
-                    epoch,
-                    (time.time() - epoch_start_time),
+        for epoch in tqdm(range(1, args.epochs + 1), desc="Training epoch"):
+            epoch_start_time = time.time()
+            (
+                model_gen,
+                model_disc,
+                langModel,
+                modelSentEncoder,
+                train_data,
+                all_msgs,
+                real_label,
+                fake_label,
+                criterion_lm,
+                optimizer_gen,
+                optimizer_disc,
+                epoch,
+                step_num,
+                discr_step_num,
+                criterion,
+                criterion_reconst,
+                criterion_sem,
+                sem_losses,
+                G_losses,
+                msg_losses,
+                D_losses,
+            ) = training_epoch(
+                model_gen,
+                model_disc,
+                langModel,
+                modelSentEncoder,
+                train_data,
+                all_msgs,
+                real_label,
+                fake_label,
+                criterion_lm,
+                optimizer_gen,
+                optimizer_disc,
+                epoch,
+                step_num,
+                discr_step_num,
+                criterion,
+                criterion_reconst,
+                criterion_sem,
+                sem_losses,
+                G_losses,
+                msg_losses,
+                D_losses,
+            )
+
+            if "t0" in optimizer_gen.param_groups[0]:
+                tmp = {}
+                for prm in model_gen.parameters():
+                    tmp[prm] = prm.data.clone()
+                    prm.data = optimizer_gen.state[prm]["ax"].clone()
+
+                tmp_disc = {}
+                for prm in model_disc.parameters():
+                    tmp_disc[prm] = prm.data.clone()
+                    prm.data = optimizer_disc.state[prm]["ax"].clone()
+
+                (
+                    val_loss_reconst2,
+                    val_loss_gen2,
+                    val_loss_msg2,
+                    val_loss_sem2,
+                    val_loss_lm2,
+                    val_loss_disc2,
+                ) = evaluate(
+                    model_gen,
+                    model_disc,
+                    val_data,
+                    real_label,
+                    fake_label,
+                    all_msgs,
+                    criterion,
+                    criterion_reconst,
+                    criterion_sem,
+                    criterion_lm,
+                    modelSentEncoder,
+                    langModel,
+                    eval_batch_size,
+                )
+                val_loss_gen_tot2 = (
+                    val_loss_msg2
+                    + val_loss_sem2
+                    + val_loss_reconst2
+                    + val_loss_gen2
+                    + val_loss_lm2
+                )
+
+                print("-" * 89)
+                print(
+                    f"| end of epoch {epoch:3d} | "
+                    f"time: {(time.time() - epoch_start_time):5.2f}s | "
+                    f"val gen loss {val_loss_gen2:5.2f} | "
+                    f"val disc loss {val_loss_disc2:5.2f} | "
+                    f"val msg loss {val_loss_msg2:5.2f} | "
+                    f"val sem loss {val_loss_sem2:5.2f} | "
+                    f"val reconst loss {val_loss_reconst2:5.2f} | "
+                    f"val lm loss {val_loss_lm2:5.2f}"
+                )
+                print("-" * 89)
+
+                with open(log_file_loss_val, "a") as log_file:
+                    log_file.write(
+                        str(val_loss_gen2)
+                        + ", "
+                        + str(val_loss_disc2)
+                        + ", "
+                        + str(val_loss_msg2)
+                        + ", "
+                        + str(val_loss_sem2)
+                        + ", "
+                        + str(val_loss_reconst2)
+                        + ", "
+                        + str(val_loss_lm2)
+                        + "\n"
+                    )
+
+                if val_loss_gen_tot2 < stored_loss:
+                    model_save(
+                        output_model_name,
+                        model_gen,
+                        model_disc,
+                        criterion,
+                        criterion_reconst,
+                        optimizer_gen,
+                        optimizer_disc,
+                    )
+                    print("Saving Averaged!")
+                    stored_loss = val_loss_gen_tot2
+
+                for prm in model_gen.parameters():
+                    prm.data = tmp[prm].clone()
+
+                for prm in model_disc.parameters():
+                    prm.data = tmp[prm].clone()
+
+            else:
+                (
+                    val_loss_reconst,
                     val_loss_gen,
-                    val_loss_disc,
                     val_loss_msg,
                     val_loss_sem,
-                    val_loss_reconst,
                     val_loss_lm,
-                )
-            )
-            print("-" * 89)
-
-            log_file_loss_val.write(
-                str(val_loss_gen)
-                + ", "
-                + str(val_loss_disc)
-                + ", "
-                + str(val_loss_msg)
-                + ", "
-                + str(val_loss_sem)
-                + ", "
-                + str(val_loss_reconst)
-                + ", "
-                + str(val_loss_lm)
-                + "\n"
-            )
-            log_file_loss_val.flush()
-
-            if val_loss_gen_tot < stored_loss:
-                model_save(output_model_name)
-                print("Saving model (new best generator validation)")
-                stored_loss = val_loss_gen_tot
-
-            if val_loss_msg < stored_loss_msg:
-                model_save(output_model_name + "_msg")
-                print("Saving model (new best msg validation)")
-                stored_loss_msg = val_loss_msg
-
-            if val_loss_text < stored_loss_text:
-                model_save(output_model_name + "_reconst")
-                print("Saving model (new best reconstruct validation)")
-                stored_loss_text = val_loss_text
-
-            if epoch % args.save_interval == 0:
-                model_save(output_model_name + "_interval")
-                print("Saving model (intervals)")
-
-            if (
-                args.optimizer == "sgd"
-                and "t0" not in optimizer_gen.param_groups[0]
-                and (
-                    len(best_val_loss) > args.nonmono
-                    and val_loss > min(best_val_loss[: -args.nonmono])
-                )
-            ):
-                print("Switching to ASGD")
-                optimizer_gen = torch.optim.ASGD(
-                    model_gen.parameters(),
-                    lr=args.lr,
-                    t0=0,
-                    lambd=0.0,
-                    weight_decay=args.wdecay,
-                )
-                optimizer_disc = torch.optim.ASGD(
-                    model_disc.parameters(),
-                    lr=args.lr,
-                    t0=0,
-                    lambd=0.0,
-                    weight_decay=args.wdecay,
+                    val_loss_disc,
+                ) = evaluate(
+                    model_gen,
+                    model_disc,
+                    val_data,
+                    real_label,
+                    fake_label,
+                    all_msgs,
+                    criterion,
+                    criterion_reconst,
+                    criterion_sem,
+                    criterion_lm,
+                    modelSentEncoder,
+                    langModel,
+                    eval_batch_size,
                 )
 
-            if args.optimizer == "sgd" and epoch in args.when:
-                print("Saving model before learning rate decreased")
-                model_save("{}.e{}".format(output_model_name, epoch))
+                val_loss_gen_tot = (
+                    val_loss_msg
+                    + val_loss_sem
+                    + val_loss_reconst
+                    + val_loss_gen
+                    + val_loss_lm
+                )
 
-                print("Dividing learning rate by 10")
-                optimizer_gen.param_groups[0]["lr"] /= 10.0
-                optimizer_disc.param_groups[0]["lr"] /= 10.0
+                val_loss_text = val_loss_sem + val_loss_reconst + val_loss_lm
 
-            best_val_loss.append(val_loss_gen_tot)
+                print("-" * 89)
+                print(
+                    f"| end of epoch {epoch:3d} | "
+                    f"time: {(time.time() - epoch_start_time):5.2f}s | "
+                    f"val gen loss {val_loss_gen:5.2f} | "
+                    f"val disc loss {val_loss_disc:5.2f} | "
+                    f"val msg loss {val_loss_msg:5.2f} | "
+                    f"val sem loss {val_loss_sem:5.2f} | "
+                    f"val reconst loss {val_loss_reconst:5.2f} | "
+                    f"val lm loss {val_loss_lm:5.2f}"
+                )
+                print("-" * 89)
 
-except KeyboardInterrupt:
-    print("-" * 89)
-    print("Exiting from training early")
+                with open(log_file_loss_val, "a") as log_file:
+                    log_file.write(
+                        str(val_loss_gen)
+                        + ", "
+                        + str(val_loss_disc)
+                        + ", "
+                        + str(val_loss_msg)
+                        + ", "
+                        + str(val_loss_sem)
+                        + ", "
+                        + str(val_loss_reconst)
+                        + ", "
+                        + str(val_loss_lm)
+                        + "\n"
+                    )
 
+                if val_loss_gen_tot < stored_loss:
+                    model_save(
+                        output_model_name,
+                        model_gen,
+                        model_disc,
+                        criterion,
+                        criterion_reconst,
+                        optimizer_gen,
+                        optimizer_disc,
+                    )
+                    print("Saving model (new best generator validation)")
+                    stored_loss = val_loss_gen_tot
 
-# Load the best saved model.
-model_load(output_model_name)
+                if val_loss_msg < stored_loss_msg:
+                    model_save(
+                        output_model_name + "_msg",
+                        model_gen,
+                        model_disc,
+                        criterion,
+                        criterion_reconst,
+                        optimizer_gen,
+                        optimizer_disc,
+                    )
+                    print("Saving model (new best msg validation)")
+                    stored_loss_msg = val_loss_msg
 
-if args.cuda:
-    model_gen = model_gen.cuda()
-    model_disc = model_disc.cuda()
-    criterion = criterion.cuda()
-    criterion_reconst = criterion_reconst.cuda()
+                if val_loss_text < stored_loss_text:
+                    model_save(
+                        output_model_name + "_reconst",
+                        model_gen,
+                        model_disc,
+                        criterion,
+                        criterion_reconst,
+                        optimizer_gen,
+                        optimizer_disc,
+                    )
+                    print("Saving model (new best reconstruct validation)")
+                    stored_loss_text = val_loss_text
 
-    if args.use_semantic_loss:
-        criterion_sem = criterion_sem.cuda()
-        modelSentEncoder = modelSentEncoder.cuda()
+                if epoch % args.save_interval == 0:
+                    model_save(
+                        output_model_name + "_interval",
+                        model_gen,
+                        model_disc,
+                        criterion,
+                        criterion_reconst,
+                        optimizer_gen,
+                        optimizer_disc,
+                    )
+                    print("Saving model (intervals)")
 
-# Run on test data.
-(
-    test_loss_reconst,
-    test_loss_gen,
-    test_loss_msg,
-    test_loss_sem,
-    test_loss_lm,
-    test_loss_disc,
-) = evaluate(test_data, test_batch_size)
+                if (
+                    args.optimizer == "sgd"
+                    and "t0" not in optimizer_gen.param_groups[0]
+                    and (
+                        len(best_val_loss) > args.nonmono
+                        and val_loss_gen > min(best_val_loss[: -args.nonmono])
+                    )
+                ):
+                    print("Switching to ASGD")
+                    optimizer_gen = torch.optim.ASGD(
+                        model_gen.parameters(),
+                        lr=args.lr,
+                        t0=0,
+                        lambd=0.0,
+                        weight_decay=args.wdecay,
+                    )
+                    optimizer_disc = torch.optim.ASGD(
+                        model_disc.parameters(),
+                        lr=args.lr,
+                        t0=0,
+                        lambd=0.0,
+                        weight_decay=args.wdecay,
+                    )
 
-print("-" * 89)
-print(
-    "| End of training | test gen loss {:5.2f} | test disc loss {:5.2f} | test msg loss {:5.2f} | test sem loss {:5.2f} | test reconst loss {:5.2f} | test lm loss {:5.2f}".format(
+                if args.optimizer == "sgd" and epoch in args.when:
+                    print("Saving model before learning rate decreased")
+                    model_save(
+                        "{}.e{}".format(output_model_name, epoch),
+                        model_gen,
+                        model_disc,
+                        criterion,
+                        criterion_reconst,
+                        optimizer_gen,
+                        optimizer_disc,
+                    )
+
+                    print("Dividing learning rate by 10")
+                    optimizer_gen.param_groups[0]["lr"] /= 10.0
+                    optimizer_disc.param_groups[0]["lr"] /= 10.0
+
+                best_val_loss.append(val_loss_gen_tot)
+
+    except KeyboardInterrupt:
+        print("-" * 89)
+        print("Exiting from training early")
+
+    # Load the best saved model.
+    (
+        model_gen,
+        model_disc,
+        criterion,
+        criterion_reconst,
+        optimizer_gen,
+        optimizer_disc,
+    ) = model_load(output_model_name)
+
+    if args.cuda:
+        model_gen = model_gen.cuda()
+        model_disc = model_disc.cuda()
+        criterion = criterion.cuda()
+        criterion_reconst = criterion_reconst.cuda()
+
+    # Run on test data.
+    (
+        test_loss_reconst,
         test_loss_gen,
-        test_loss_disc,
         test_loss_msg,
         test_loss_sem,
-        test_loss_reconst,
         test_loss_lm,
+        test_loss_disc,
+    ) = evaluate(
+        model_gen,
+        model_disc,
+        test_data,
+        real_label,
+        fake_label,
+        all_msgs,
+        criterion,
+        criterion_reconst,
+        criterion_sem,
+        criterion_lm,
+        modelSentEncoder,
+        langModel,
+        test_batch_size,
     )
-)
-print("-" * 89)
+
+    print("-" * 89)
+    print(
+        "| End of training | "
+        f"test gen loss {test_loss_gen:5.2f} | "
+        f"test disc loss {test_loss_disc:5.2f} | "
+        f"test msg loss {test_loss_msg:5.2f} | "
+        f"test sem loss {test_loss_sem:5.2f} | "
+        f"test reconst loss {test_loss_reconst:5.2f} | "
+        f"test lm loss {test_loss_lm:5.2f}"
+    )
+    print("-" * 89)
+
+
+if __name__ == "__main__":
+
+    # Parse command-line arguments
+    # =========================================================================
+
+    parser = argparse.ArgumentParser(
+        description="PyTorch PennTreeBank RNN/LSTM Language Model"
+    )
+    parser.add_argument(
+        "--data", type=str, default="wikitext-2", help="location of the data corpus"
+    )
+    parser.add_argument(
+        "--emsize", type=int, default=512, help="size of word embeddings"
+    )
+    parser.add_argument(
+        "--lr", type=float, default=0.00003, help="initial learning rate"
+    )
+    parser.add_argument(
+        "--disc_lr", type=float, default=0.0001, help="initial learning rate"
+    )
+    parser.add_argument("--epochs", type=int, default=8000, help="upper epoch limit")
+    parser.add_argument(
+        "--batch_size", type=int, default=80, metavar="N", help="batch size"
+    )
+    parser.add_argument("--bptt", type=int, default=80, help="sequence length")
+    parser.add_argument(
+        "--fixed_length",
+        type=int,
+        default=0,
+        help="whether to use a fixed input length (bptt value)",
+    )
+    parser.add_argument(
+        "--dropout_transformer",
+        type=float,
+        default=0.1,
+        help="dropout applied to transformer layers (0 = no dropout)",
+    )
+    parser.add_argument(
+        "--dropouti",
+        type=float,
+        default=0.1,
+        help="dropout for input embedding layers (0 = no dropout)",
+    )
+    parser.add_argument(
+        "--dropoute",
+        type=float,
+        default=0.1,
+        help="dropout to remove words from embedding layer (0 = no dropout)",
+    )
+    parser.add_argument("--seed", type=int, default=1111, help="random seed")
+    parser.add_argument("--nonmono", type=int, default=5, help="random seed")
+    parser.add_argument("--cuda", action="store_false", help="do not use CUDA")
+    parser.add_argument(
+        "--log-interval", type=int, default=200, metavar="N", help="report interval"
+    )
+    randomhash = "".join(str(time.time()).split("."))
+    parser.add_argument(
+        "--save", type=str, default=randomhash, help="path to save the final model"
+    )
+    parser.add_argument(
+        "--save_interval", type=int, default=20, help="saving models regualrly"
+    )
+
+    parser.add_argument(
+        "--resume", type=str, default="", help="path of model to resume"
+    )
+    parser.add_argument(
+        "--optimizer", type=str, default="sgd", help="optimizer to use (sgd, adam)"
+    )
+    parser.add_argument(
+        "--wdecay",
+        type=float,
+        default=1.2e-6,
+        help="weight decay applied to all weights",
+    )
+    parser.add_argument(
+        "--when",
+        nargs="+",
+        type=int,
+        default=[-1],
+        help="When (which epochs) to divide the learning rate by 10 - accepts multiple",
+    )
+
+    # Message arguments
+    parser.add_argument(
+        "--msg_len", type=int, default=64, help="The length of the binary message"
+    )
+    parser.add_argument(
+        "--msgs_num", type=int, default=3, help="The total number of messages"
+    )
+    parser.add_argument(
+        "--msg_in_mlp_layers",
+        type=int,
+        default=1,
+        help="message encoding FC layers number",
+    )
+    parser.add_argument(
+        "--msg_in_mlp_nodes",
+        type=list,
+        default=[],
+        help="nodes in the MLP of the message",
+    )
+
+    # Transformer arguments
+    parser.add_argument(
+        "--attn_heads",
+        type=int,
+        default=4,
+        help="The number of attention heads in the transformer",
+    )
+    parser.add_argument(
+        "--encoding_layers", type=int, default=3, help="The number of encoding layers"
+    )
+    parser.add_argument(
+        "--shared_encoder",
+        type=bool,
+        default=True,
+        help="If the message encoder and language encoder will share weights",
+    )
+
+    # Adv. transformer arguments
+    parser.add_argument(
+        "--adv_attn_heads",
+        type=int,
+        default=4,
+        help="The number of attention heads in the adversary transformer",
+    )
+    parser.add_argument(
+        "--adv_encoding_layers",
+        type=int,
+        default=3,
+        help="The number of encoding layers in the adversary transformer",
+    )
+
+    # Gumbel softmax arguments
+    parser.add_argument(
+        "--gumbel_temp", type=float, default=0.5, help="Gumbel softmax temprature"
+    )
+
+    # Adam optimizer arguments
+    parser.add_argument(
+        "--scheduler",
+        type=int,
+        default=1,
+        help="whether to schedule the lr",
+    )
+    parser.add_argument(
+        "--warm_up", type=int, default=6000, help="number of linear warm up steps"
+    )
+    parser.add_argument("--beta1", type=float, default=0.9, help="Adam beta1 parameter")
+    parser.add_argument(
+        "--beta2", type=float, default=0.98, help="Adam beta2 parameter"
+    )
+    parser.add_argument("--eps", type=float, default=1e-9, help="Adam eps parameter")
+
+    # GAN arguments
+    parser.add_argument(
+        "--msg_weight",
+        type=float,
+        default=25,
+        help="The factor multiplied with the message loss",
+    )
+
+    # FB InferSent semantic loss
+    parser.add_argument(
+        "--use_semantic_loss", type=int, default=1, help="whether to use semantic loss"
+    )
+    parser.add_argument(
+        "--glove_path",
+        type=str,
+        default="models/sent_encoder/GloVe/glove.840B.300d.txt",
+        help="path to glove embeddings",
+    )
+    parser.add_argument(
+        "--infersent_path",
+        type=str,
+        default="models/sent_encoder/infersent2.pkl",
+        help="path to the trained sentence semantic model",
+    )
+    parser.add_argument(
+        "--sem_weight",
+        type=float,
+        default=40,
+        help="The factor multiplied with the semantic loss",
+    )
+
+    # Language loss
+    parser.add_argument(
+        "--use_lm_loss", type=int, default=1, help="whether to use language model loss"
+    )
+    parser.add_argument(
+        "--lm_weight",
+        type=float,
+        default=1,
+        help="The factor multiplied with the lm loss",
+    )
+    parser.add_argument(
+        "--lm_ckpt",
+        type=str,
+        default="models/WT2_lm.pt",
+        help="path to the fine tuned language model",
+    )
+
+    # Reconstruction loss
+    parser.add_argument(
+        "--use_reconst_loss",
+        type=int,
+        default=1,
+        help="whether to use language reconstruction loss",
+    )
+    parser.add_argument(
+        "--reconst_weight",
+        type=float,
+        default=1,
+        help="The factor multiplied with the reconstruct loss",
+    )
+
+    # Language model params.
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="LSTM",
+        help="type of recurrent net (LSTM, QRNN, GRU)",
+    )
+    parser.add_argument(
+        "--emsize_lm", type=int, default=400, help="size of word embeddings"
+    )
+    parser.add_argument(
+        "--nhid", type=int, default=1150, help="number of hidden units per layer"
+    )
+    parser.add_argument("--nlayers", type=int, default=3, help="number of layers")
+    parser.add_argument(
+        "--dropout",
+        type=float,
+        default=0.4,
+        help="dropout applied to layers (0 = no dropout)",
+    )
+    parser.add_argument(
+        "--dropouth",
+        type=float,
+        default=0.3,
+        help="dropout for rnn layers (0 = no dropout)",
+    )
+    parser.add_argument(
+        "--dropouti_lm",
+        type=float,
+        default=0.65,
+        help="dropout for input embedding layers (0 = no dropout)",
+    )
+    parser.add_argument(
+        "--dropoute_lm",
+        type=float,
+        default=0.1,
+        help="dropout to remove words from embedding layer (0 = no dropout)",
+    )
+    parser.add_argument(
+        "--wdrop",
+        type=float,
+        default=0,
+        help="amount of weight dropout to apply to the RNN hidden to hidden matrix",
+    )
+
+    # GAN arguments
+    parser.add_argument(
+        "--discr_interval", type=int, default=1, help="when to update the discriminator"
+    )
+    parser.add_argument(
+        "--autoenc_path",
+        type=str,
+        default="",
+        help=(
+            "path of the autoencoder path to use as init to the generator, "
+            "in case the model is pretrained as autoencoder only"
+        ),
+    )
+    parser.add_argument(
+        "--gen_weight",
+        type=float,
+        default=2,
+        help="The factor multiplied with the gen loss",
+    )
+
+    args = parser.parse_args()
+    args.tied = True
+    args.tied_lm = True
+    print("Args:", args)
+
+    main(args)
